@@ -1,0 +1,11 @@
+[package]
+name = "another-rust-coin"
+version = "0.1.0"
+authors = ["Quentin Boyer <qbsecond@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+bincode = "*"
+serde = "*"
+serde_derive = "*"
+bincode_modified = {path = "bincode_modified"}
