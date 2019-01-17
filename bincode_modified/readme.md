@@ -1,4 +1,4 @@
-# Bincode
+# Bincode (Modified)
 
 <img align="right" src="./logo.png" />
 
