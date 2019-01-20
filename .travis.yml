@@ -15,5 +15,11 @@ script:
 
 cache: cargo
 
-notifications:
-    webhooks: https://discordapp.com/api/webhooks/536610527837683734/FPnSdX31qA_c5q0Ctr_pPiYK-Q5vFZnUhdX3RPA3rcCdDFBZRP3mjLKlk4tsUdSRsS6m
+after_success:
+  - wget https://raw.githubusercontent.com/DiscordHooks/travis-ci-discord-webhook/master/send.sh
+  - chmod +x send.sh
+  - ./send.sh success $WEBHOOK_URL
+after_failure:
+  - wget https://raw.githubusercontent.com/DiscordHooks/travis-ci-discord-webhook/master/send.sh
+  - chmod +x send.sh
+  - ./send.sh failure $WEBHOOK_URL
