@@ -5,7 +5,4 @@ authors = ["Quentin Boyer <qbsecond@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-bincode = "*"
-serde = "*"
-serde_derive = "*"
-bincode_modified = {path = "bincode_modified"}
+ensicoin-serializer = {path = "ensicoin-serializer"}
