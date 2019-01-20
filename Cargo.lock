@@ -2,10 +2,10 @@
 name = "another-rust-coin"
 version = "0.1.0"
 dependencies = [
- "ensicoin-serializer 0.1.0",
+ "ensicoin_serializer 0.1.0",
 ]
 
 [[package]]
-name = "ensicoin-serializer"
+name = "ensicoin_serializer"
 version = "0.1.0"
 

@@ -1,3 +1,3 @@
-mod deserializer;
-mod serializer;
-mod types;
+pub mod deserializer;
+pub mod serializer;
+pub mod types;
