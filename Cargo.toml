@@ -5,4 +5,4 @@ authors = ["Quentin Boyer <qbsecond@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-ensicoin_serializer = {path = "ensicoin_serializer"}
+ensicoin_serializer = "*"
