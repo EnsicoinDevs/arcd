@@ -53,3 +53,23 @@ impl Serialize for Whoami {
         v
     }
 }
+
+pub struct WhoamiAck {}
+
+impl WhoamiAck {
+    pub fn new() -> WhoamiAck {
+        WhoamiAck {}
+    }
+}
+
+impl Serialize for WhoamiAck {
+    fn serialize(&self) -> Vec<u8> {
+        Vec::new()
+    }
+}
+
+impl Message for WhoamiAck {
+    fn message_type() -> [u8; 12] {
+        [119, 104, 111, 97, 109, 105, 97, 99, 107, 0, 0, 0]
+    }
+}
