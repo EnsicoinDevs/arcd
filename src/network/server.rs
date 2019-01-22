@@ -1,4 +1,7 @@
 use std::net;
+
+use crate::data::{Message, Whoami};
+
 pub struct Server {
     pub listener: net::TcpListener,
     connections: Vec<net::TcpStream>,
@@ -19,5 +22,9 @@ impl Server {
                 stream.unwrap().peer_addr().unwrap()
             )
         }
+    }
+
+    pub fn initiate(&self, stream: &mut std::net::TcpStream) {
+        Whoami::new().send(stream).unwrap();
     }
 }
