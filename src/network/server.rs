@@ -1,4 +1,3 @@
-use crate::data::{Message, Whoami};
 use std::net;
 
 use crate::network::Connection;
@@ -28,7 +27,7 @@ impl Server {
         }
     }
 
-    pub fn initiate(&self, stream: &mut std::net::TcpStream) {
-        Whoami::new().send(stream).unwrap();
+    pub fn initiate(&self, addr: std::net::IpAddr, port: u16) {
+        Connection::initiate(addr, port);
     }
 }

@@ -1,9 +1,12 @@
+use std::io::Read;
+use std::io::Write;
+
 extern crate ensicoin_serializer;
 use ensicoin_serializer::Deserialize;
 use ensicoin_serializer::Deserializer;
 use ensicoin_serializer::VarUint;
 
-use std::io::Read;
+use crate::data::{Message, Whoami};
 
 enum State {
     Initiated,
@@ -25,6 +28,27 @@ impl Connection {
             stream,
         }
     }
+    pub fn initiate(address: std::net::IpAddr, port: u16) -> std::io::Result<()> {
+        let stream = std::net::TcpStream::connect(std::net::SocketAddr::new(address, port))?;
+        std::thread::spawn(move || {
+            let mut conn = Connection {
+                state: State::Initiated,
+                stream: stream,
+            };
+            Whoami::new().send(&mut conn);
+            conn.read_header();
+        });
+        Ok(())
+    }
+
+    pub fn remote(&self) -> String {
+        self.stream.peer_addr().unwrap().to_string()
+    }
+
+    pub fn send_bytes(&mut self, v: Vec<u8>) -> std::io::Result<()> {
+        self.stream.write(&v)?;
+        Ok(())
+    }
 
     pub fn read_header(&mut self) -> std::io::Result<()> {
         let mut buffer: [u8; 24] = [0; 24];
@@ -38,7 +62,8 @@ impl Connection {
         let payload_length = VarUint::deserialize(&mut de)
             .unwrap_or(VarUint { value: 0 })
             .value as usize;
-        println!("Raw message type : {:?}", message_type);
+        let message_type = String::from_utf8(message_type).unwrap();
+        info!("{} from [{}]", message_type, self.remote());
         Ok(())
     }
 }
