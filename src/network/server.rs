@@ -1,6 +1,8 @@
 use crate::data::{Message, Whoami};
 use std::net;
 
+use crate::network::Connection;
+
 pub struct Server {
     pub listener: net::TcpListener,
     connections: Vec<net::TcpStream>,
@@ -18,10 +20,11 @@ impl Server {
 
     pub fn listen(&mut self) {
         for stream in self.listener.incoming() {
-            println!(
-                "Connection from : {:?}",
-                stream.unwrap().peer_addr().unwrap()
-            )
+            let stream = stream.unwrap().try_clone().unwrap();
+            std::thread::spawn(move || {
+                let mut conn = Connection::new(stream);
+                conn.read_header();
+            });
         }
     }
 
