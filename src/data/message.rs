@@ -8,6 +8,7 @@ use crate::network::Address;
 
 pub trait Message: Serialize {
     fn message_type() -> [u8; 12];
+    fn message_string() -> &'static str;
     fn send(&self, stream: &mut TcpStream) -> Result<(), std::io::Error> {
         let magic: u32 = 422021;
         let message_type = Self::message_type();
@@ -18,6 +19,11 @@ pub trait Message: Serialize {
         stream.write(&message_type)?;
         stream.write(&payload_length.serialize())?;
         stream.write(&payload)?;
+        info!(
+            "{} to [{}]",
+            Self::message_string(),
+            stream.peer_addr().unwrap()
+        );
         Ok(())
     }
 }
@@ -31,6 +37,9 @@ pub struct Whoami {
 impl Message for Whoami {
     fn message_type() -> [u8; 12] {
         [119, 104, 111, 97, 109, 105, 0, 0, 0, 0, 0, 0]
+    }
+    fn message_string() -> &'static str {
+        "whoami"
     }
 }
 
@@ -71,5 +80,8 @@ impl Serialize for WhoamiAck {
 impl Message for WhoamiAck {
     fn message_type() -> [u8; 12] {
         [119, 104, 111, 97, 109, 105, 97, 99, 107, 0, 0, 0]
+    }
+    fn message_string() -> &'static str {
+        "whoamiack"
     }
 }
