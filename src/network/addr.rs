@@ -1,7 +1,7 @@
 use std::net::{IpAddr, SocketAddr};
 
-//extern crate ensicoin_serializer;
-use ensicoin_serializer::Serialize;
+use ensicoin_serializer::Result as DeserResult;
+use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,6 +16,15 @@ impl Serialize for Address {
         v.append(&mut self.timestamp.serialize());
         v.append(&mut self.address.serialize());
         v
+    }
+}
+
+impl Deserialize for Address {
+    fn deserialize(de: &mut Deserializer) -> DeserResult<Address> {
+        Ok(Address {
+            timestamp: u64::deserialize(de)?,
+            address: SocketAddr::deserialize(de)?,
+        })
     }
 }
 

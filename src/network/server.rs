@@ -22,12 +22,12 @@ impl Server {
             let stream = stream.unwrap().try_clone().unwrap();
             std::thread::spawn(move || {
                 let mut conn = Connection::new(stream);
-                conn.read_header();
+                conn.read_message();
             });
         }
     }
 
     pub fn initiate(&self, addr: std::net::IpAddr, port: u16) {
-        Connection::initiate(addr, port);
+        Connection::initiate(addr, port).unwrap();
     }
 }

@@ -5,6 +5,6 @@ authors = ["Quentin Boyer <qbsecond@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-ensicoin_serializer = "0.1.2"
+ensicoin_serializer = "0.2.0"
 log = "0.4"
 pretty_env_logger = "0.3"
