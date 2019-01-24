@@ -82,16 +82,7 @@ impl Connection {
 
     pub fn read_message(&mut self) -> std::io::Result<(MessageType, Vec<u8>)> {
         let mut buffer: [u8; 24] = [0; 24];
-        match self.stream.read(&mut buffer) {
-            Ok(0) => {
-                return Err(std::io::Error::new(
-                    ErrorKind::ConnectionAborted,
-                    "Peer disconnected",
-                ));
-            }
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        self.stream.read_exact(&mut buffer)?;
         let mut de = Deserializer::new(buffer.to_vec());
 
         let magic = u32::deserialize(&mut de).unwrap_or(0);
@@ -113,6 +104,11 @@ impl Connection {
 
         let mut payload: Vec<u8> = vec![0; payload_length];
         self.stream.read_exact(&mut payload)?;
+        eprintln!(
+            "buffer {} bytes of {} bytes in payload",
+            payload.len(),
+            payload_length
+        );
         Ok((message_type, payload))
     }
 
