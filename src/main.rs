@@ -15,6 +15,17 @@ use std::str::FromStr;
 
 fn main() {
     let matches = cli::build_cli().get_matches();
+    let level = if matches.is_present("verbose") {
+        simplelog::LevelFilter::Trace
+    } else if matches.is_present("error") {
+        simplelog::LevelFilter::Error
+    } else {
+        simplelog::LevelFilter::Info
+    };
+    simplelog::TermLogger::init(level, simplelog::Config::default()).unwrap();
+
+    let listen_port = matches.value_of("port").unwrap().parse().unwrap();
+
     match matches.subcommand() {
         ("completions", Some(sub_matches)) => {
             let shell = sub_matches.value_of("SHELL").unwrap();
@@ -24,10 +35,18 @@ fn main() {
                 &mut io::stdout(),
             );
         }
-        (_, _) => unimplemented!(), // for brevity
-    }
-    //simplelog::TermLogger::init(simplelog::LevelFilter::Info, simplelog::Config::default());
-    //let mut server = Server::new();
-    //server.initiate(std::net::IpAddr::from_str("78.248.188.120").unwrap(), 4224);
-    //server.listen();
+        ("initiate", Some(sub_matches)) => {
+            let mut server = Server::new(listen_port);
+            server.initiate(
+                std::net::IpAddr::from_str(sub_matches.value_of("HOST_IP").unwrap()).unwrap(),
+                sub_matches.value_of("PORT").unwrap().parse().unwrap(),
+            );
+            server.listen();
+        }
+        ("", _) => {
+            let mut server = Server::new(listen_port);
+            server.listen();
+        }
+        (_, _) => (),
+    };
 }

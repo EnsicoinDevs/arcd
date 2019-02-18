@@ -11,10 +11,10 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new() -> Server {
+    pub fn new(port: u16) -> Server {
         let (sender, reciever) = mpsc::channel();
         let server = Server {
-            listener: net::TcpListener::bind("127.0.0.1:4224").unwrap(),
+            listener: net::TcpListener::bind(("127.0.0.1", port)).unwrap(),
             connections: Vec::new(),
             connection_sender: sender,
             connection_receiver: reciever,
