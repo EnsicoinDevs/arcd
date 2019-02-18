@@ -2,9 +2,7 @@ use std::io::Read;
 use std::io::{ErrorKind, Write};
 
 extern crate ensicoin_serializer;
-use ensicoin_serializer::Deserialize;
-use ensicoin_serializer::Deserializer;
-use ensicoin_serializer::VarUint;
+use ensicoin_serializer::{Deserialize, Deserializer};
 
 use crate::data::{Message, MessageType, Whoami, WhoamiAck};
 
@@ -61,7 +59,21 @@ impl Connection {
             conn.remote = conn.stream.peer_addr().unwrap().to_string();
             info!("connected to [{}]", conn.remote());
             Whoami::new().send(&mut conn).unwrap();
-            conn.read_message().unwrap();
+            loop {
+                match conn.read_message() {
+                    Ok((message_type, v)) => match conn.handle_message(message_type, v) {
+                        Ok(()) => (),
+                        _ => {
+                            conn.terminate();
+                            break;
+                        }
+                    },
+                    _ => {
+                        conn.terminate();
+                        break;
+                    }
+                }
+            }
         });
         Ok(())
     }
@@ -98,9 +110,7 @@ impl Connection {
         let message_type = de
             .extract_bytes(12)
             .unwrap_or(vec![117, 110, 107, 110, 111, 119, 110]); // "unknown"
-        let payload_length = VarUint::deserialize(&mut de)
-            .unwrap_or(VarUint { value: 0 })
-            .value as usize;
+        let payload_length = u64::deserialize(&mut de).unwrap_or(0) as usize;
 
         let message_type = String::from_utf8(message_type).unwrap();
         let message_type = match message_type.as_ref() {
@@ -113,6 +123,12 @@ impl Connection {
 
         let mut payload: Vec<u8> = vec![0; payload_length];
         self.stream.read_exact(&mut payload)?;
+        trace!(
+            "{} read out of {} in [{}]",
+            payload.len(),
+            payload_length,
+            self.remote()
+        );
         Ok((message_type, payload))
     }
 

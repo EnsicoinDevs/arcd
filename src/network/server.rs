@@ -5,7 +5,7 @@ use crate::network::{Connection, ConnectionMessage};
 
 pub struct Server {
     pub listener: net::TcpListener,
-    connection_reciever: mpsc::Receiver<ConnectionMessage>,
+    connection_receiver: mpsc::Receiver<ConnectionMessage>,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: Vec<net::TcpStream>,
 }
@@ -17,7 +17,7 @@ impl Server {
             listener: net::TcpListener::bind("127.0.0.1:4224").unwrap(),
             connections: Vec::new(),
             connection_sender: sender,
-            connection_reciever: reciever,
+            connection_receiver: reciever,
         };
         info!("Node started");
         server
