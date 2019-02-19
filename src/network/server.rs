@@ -3,6 +3,10 @@ use std::sync::mpsc;
 
 use crate::network::{Connection, ConnectionMessage};
 
+pub enum ServerMessage {
+    Terminate,
+}
+
 pub struct Server {
     pub listener: net::TcpListener,
     connection_receiver: mpsc::Receiver<ConnectionMessage>,
@@ -28,28 +32,16 @@ impl Server {
             let stream = stream.unwrap().try_clone().unwrap();
             let sender = self.connection_sender.clone();
             std::thread::spawn(move || {
-                let mut conn = Connection::new(stream, sender);
+                let conn = Connection::new(stream, sender);
                 trace!("new connection");
-                loop {
-                    match conn.read_message() {
-                        Ok((message_type, v)) => match conn.handle_message(message_type, v) {
-                            Ok(()) => (),
-                            _ => {
-                                conn.terminate();
-                                break;
-                            }
-                        },
-                        _ => {
-                            conn.terminate();
-                            break;
-                        }
-                    }
-                }
+                conn.idle();
             });
         }
     }
 
     pub fn initiate(&self, addr: std::net::IpAddr, port: u16) {
-        Connection::initiate(addr, port, self.connection_sender.clone()).unwrap();
+        if let Err(e) = Connection::initiate(addr, port, self.connection_sender.clone()) {
+            error!("Error on connection initiation: {}", e)
+        };
     }
 }

@@ -1,4 +1,5 @@
 extern crate ensicoin_serializer;
+use crate::network;
 use crate::network::Connection;
 use ensicoin_serializer::Serialize;
 
@@ -12,7 +13,7 @@ pub enum MessageType {
 pub trait Message: Serialize {
     fn message_string() -> [u8; 12];
     fn message_type() -> MessageType;
-    fn send(&self, conn: &mut Connection) -> Result<(), std::io::Error> {
+    fn send(&self, conn: &mut Connection) -> Result<(), network::Error> {
         let magic: u32 = 422021;
         let message_string = Self::message_string();
         let mut payload = self.serialize();
