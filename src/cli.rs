@@ -1,3 +1,4 @@
+use crate::constants::{DEFAULT_PORT, IP};
 use clap::{App, Arg, SubCommand};
 
 fn is_port(v: String) -> Result<(), String> {
@@ -37,7 +38,7 @@ pub fn build_cli() -> App<'static, 'static> {
                 .short("p")
                 .long("port")
                 .help("Set the listening port")
-                .default_value("4224")
+                .default_value(DEFAULT_PORT)
                 .validator(is_port),
         )
         .subcommand(
@@ -55,14 +56,14 @@ pub fn build_cli() -> App<'static, 'static> {
                 .about("initiate a connection with a host and listens")
                 .arg(
                     Arg::with_name("HOST_IP")
-                        .required(true)
                         .help("The ip of the remote host")
+                        .default_value(IP)
                         .validator(is_ip),
                 )
                 .arg(
                     Arg::with_name("PORT")
                         .help("Remote port")
-                        .default_value("4224")
+                        .default_value(DEFAULT_PORT)
                         .validator(is_port),
                 ),
         )
