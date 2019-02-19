@@ -38,16 +38,17 @@ fn main() {
             );
         }
         ("initiate", Some(sub_matches)) => {
-            let mut server = Server::new(listen_port);
+            let (server, sender) = Server::new();
             server.initiate(
                 std::net::IpAddr::from_str(sub_matches.value_of("HOST_IP").unwrap()).unwrap(),
                 sub_matches.value_of("PORT").unwrap().parse().unwrap(),
+                sender.clone(),
             );
-            server.listen();
+            server.listen(listen_port, sender);
         }
         ("", _) => {
-            let mut server = Server::new(listen_port);
-            server.listen();
+            let (server, sender) = Server::new();
+            server.listen(listen_port, sender);
         }
         (_, _) => (),
     };

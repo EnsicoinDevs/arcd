@@ -205,7 +205,7 @@ impl Connection {
         Ok((message_type, payload))
     }
 
-    pub fn terminate(&mut self, error: Error) {
+    fn terminate(&mut self, error: Error) {
         warn!("connection [{}] terminated: {}", self.remote(), error);
         self.connection_sender
             .send(ConnectionMessage::Disconnect(
@@ -215,7 +215,7 @@ impl Connection {
             .unwrap();
     }
 
-    pub fn handle_message(&mut self, t: MessageType, v: Vec<u8>) -> Result<(), Error> {
+    fn handle_message(&mut self, t: MessageType, v: Vec<u8>) -> Result<(), Error> {
         let mut de = Deserializer::new(v);
         match t {
             MessageType::Whoami if self.state == State::Idle => {
@@ -230,6 +230,14 @@ impl Connection {
             }
             MessageType::WhoamiAck if self.state == State::Confirm => {
                 self.state = State::Ack;
+                let (sender, reciever) = std::sync::mpsc::channel();
+                self.server_reciever = reciever;
+                if let Err(_) = self.connection_sender.send(ConnectionMessage::Register(
+                    sender,
+                    String::from(self.remote()),
+                )) {
+                    return Err(Error::ChannelError);
+                };
             }
             MessageType::WhoamiAck if self.state == State::Replied => {
                 self.state = State::Ack;

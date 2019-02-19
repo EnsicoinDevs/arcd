@@ -8,39 +8,59 @@ pub enum ServerMessage {
 }
 
 pub struct Server {
-    pub listener: net::TcpListener,
     connection_receiver: mpsc::Receiver<ConnectionMessage>,
-    connection_sender: mpsc::Sender<ConnectionMessage>,
-    connections: Vec<net::TcpStream>,
+    connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
 }
 
 impl Server {
-    pub fn new(port: u16) -> Server {
+    pub fn new() -> (Server, mpsc::Sender<ConnectionMessage>) {
         let (sender, reciever) = mpsc::channel();
         let server = Server {
-            listener: net::TcpListener::bind(("127.0.0.1", port)).unwrap(),
-            connections: Vec::new(),
-            connection_sender: sender,
+            connections: std::collections::HashMap::new(),
             connection_receiver: reciever,
         };
         info!("Node started");
-        server
+        (server, sender)
     }
 
-    pub fn listen(&mut self) {
-        for stream in self.listener.incoming() {
-            let stream = stream.unwrap().try_clone().unwrap();
-            let sender = self.connection_sender.clone();
-            std::thread::spawn(move || {
-                let conn = Connection::new(stream, sender);
-                trace!("new connection");
-                conn.idle();
-            });
+    fn idle(mut self) {
+        loop {
+            match self.connection_receiver.recv().unwrap() {
+                ConnectionMessage::Register(sender, host) => {
+                    info!("Registered [{}]", &host);
+                    self.connections.insert(host, sender);
+                }
+                ConnectionMessage::Disconnect(e, host) => {
+                    self.connections.remove(&host);
+                    warn!("Deleted Connection [{}] because of: ({})", host, e)
+                }
+            }
         }
     }
 
-    pub fn initiate(&self, addr: std::net::IpAddr, port: u16) {
-        if let Err(e) = Connection::initiate(addr, port, self.connection_sender.clone()) {
+    pub fn listen(self, port: u16, sender: mpsc::Sender<ConnectionMessage>) {
+        let listener = net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let stream = stream.unwrap().try_clone().unwrap();
+                let sender = sender.clone();
+                std::thread::spawn(move || {
+                    let conn = Connection::new(stream, sender.clone());
+                    trace!("new connection");
+                    conn.idle();
+                });
+            }
+        });
+        self.idle();
+    }
+
+    pub fn initiate(
+        &self,
+        addr: std::net::IpAddr,
+        port: u16,
+        sender: mpsc::Sender<ConnectionMessage>,
+    ) {
+        if let Err(e) = Connection::initiate(addr, port, sender) {
             error!("Error on connection initiation: {}", e)
         };
     }
