@@ -1,6 +1,8 @@
 mod cli;
+mod constants;
 mod data;
 mod network;
+
 use network::Server;
 
 #[macro_use]

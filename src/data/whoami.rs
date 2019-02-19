@@ -4,9 +4,9 @@ use ensicoin_serializer::Result as DeserResult;
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 
 pub struct Whoami {
-    version: u32,
-    address: Address,
-    services: Vec<String>,
+    pub version: u32,
+    pub address: Address,
+    pub services: Vec<String>,
 }
 
 impl Message for Whoami {
@@ -40,9 +40,33 @@ impl Serialize for Whoami {
 
 impl Deserialize for Whoami {
     fn deserialize(de: &mut Deserializer) -> DeserResult<Whoami> {
-        let version = u32::deserialize(de)?;
-        let address = Address::deserialize(de)?;
-        let services: Vec<String> = Vec::deserialize(de)?;
+        let version = match u32::deserialize(de) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(ensicoin_serializer::Error::Message(format!(
+                    "In Whoami reading version: {}",
+                    e
+                )));
+            }
+        };
+        let address = match Address::deserialize(de) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(ensicoin_serializer::Error::Message(format!(
+                    "In Whoami reading address: {}",
+                    e
+                )));
+            }
+        };
+        let services: Vec<String> = match Vec::deserialize(de) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(ensicoin_serializer::Error::Message(format!(
+                    "In Whoami reading services: {}",
+                    e
+                )));
+            }
+        };
 
         Ok(Whoami {
             version,

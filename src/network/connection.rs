@@ -4,6 +4,7 @@ use std::io::Write;
 extern crate ensicoin_serializer;
 use ensicoin_serializer::{Deserialize, Deserializer};
 
+use crate::constants::MAGIC;
 use crate::data::{Message, MessageType, Whoami, WhoamiAck};
 use crate::network::ServerMessage;
 
@@ -42,7 +43,9 @@ pub enum ConnectionMessage {
 
 #[derive(Debug)]
 pub enum Error {
+    ParseError(ensicoin_serializer::Error),
     InvalidState(State),
+    InvalidMagic(u32),
     IoError(std::io::Error),
     ChannelError,
     ServerTermination,
@@ -51,11 +54,19 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Error::ParseError(e) => write!(f, "Parse error: {}", e),
             Error::InvalidState(st) => write!(f, "Connection is in invalid state: {}", st),
             Error::IoError(e) => write!(f, "IoError: {}", e),
+            Error::InvalidMagic(n) => write!(f, "Invalid magic, got {} expected {}", n, MAGIC),
             Error::ChannelError => write!(f, "Server channel failed"),
             Error::ServerTermination => write!(f, "Server terminated the connection"),
         }
+    }
+}
+
+impl From<ensicoin_serializer::Error> for Error {
+    fn from(error: ensicoin_serializer::Error) -> Self {
+        Error::ParseError(error)
     }
 }
 
@@ -164,6 +175,9 @@ impl Connection {
         let mut de = Deserializer::new(buffer.to_vec());
 
         let magic = u32::deserialize(&mut de).unwrap_or(0);
+        if magic != MAGIC {
+            return Err(Error::InvalidMagic(magic));
+        };
         let message_type = de
             .extract_bytes(12)
             .unwrap_or(vec![117, 110, 107, 110, 111, 119, 110]); // "unknown"
@@ -202,10 +216,13 @@ impl Connection {
     }
 
     pub fn handle_message(&mut self, t: MessageType, v: Vec<u8>) -> Result<(), Error> {
+        let mut de = Deserializer::new(v);
         match t {
             MessageType::Whoami if self.state == State::Idle => {
                 Whoami::new().send(self)?;
                 WhoamiAck::new().send(self)?;
+                let remote_id = Whoami::deserialize(&mut de)?;
+                self.version = std::cmp::min(self.version, remote_id.version);
                 self.state = State::Confirm;
             }
             MessageType::Whoami if self.state == State::Initiated => {

@@ -10,6 +10,22 @@ pub enum MessageType {
     Unknown(String),
 }
 
+impl std::fmt::Display for MessageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                MessageType::Whoami => "Whoami".to_string(),
+                MessageType::WhoamiAck => "WhoamiAck".to_string(),
+                MessageType::Unknown(s) => {
+                    format!("Unknown: {}", s).trim_matches('\x00').to_string()
+                }
+            }
+        )
+    }
+}
+
 pub trait Message: Serialize {
     fn message_string() -> [u8; 12];
     fn message_type() -> MessageType;

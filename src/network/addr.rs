@@ -22,8 +22,24 @@ impl Serialize for Address {
 impl Deserialize for Address {
     fn deserialize(de: &mut Deserializer) -> DeserResult<Address> {
         Ok(Address {
-            timestamp: u64::deserialize(de)?,
-            address: SocketAddr::deserialize(de)?,
+            timestamp: match u64::deserialize(de) {
+                Ok(x) => x,
+                Err(e) => {
+                    return Err(ensicoin_serializer::Error::Message(format!(
+                        "In Address reading timestamp: {}",
+                        e
+                    )));
+                }
+            },
+            address: match SocketAddr::deserialize(de) {
+                Ok(x) => x,
+                Err(e) => {
+                    return Err(ensicoin_serializer::Error::Message(format!(
+                        "In Address reading address: {}",
+                        e
+                    )));
+                }
+            },
         })
     }
 }
