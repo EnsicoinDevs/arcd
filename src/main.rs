@@ -3,6 +3,7 @@ mod data;
 mod network;
 use network::Server;
 
+#[macro_use]
 extern crate clap;
 extern crate simplelog;
 #[macro_use]

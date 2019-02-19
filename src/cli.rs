@@ -3,7 +3,8 @@ use clap::{App, Arg, SubCommand};
 fn is_port(v: String) -> Result<(), String> {
     let n: Result<u16, std::num::ParseIntError> = v.parse();
     match n {
-        Ok(_) => Ok(()),
+        Ok(i) if i > 1024 => Ok(()),
+        Ok(_) => Err("port must be at least 1025".to_string()),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -17,9 +18,7 @@ fn is_ip(v: String) -> Result<(), String> {
 }
 
 pub fn build_cli() -> App<'static, 'static> {
-    App::new("another-rust-coin")
-        .version("0.0.1")
-        .about("A rust node for the ensicoin protocol")
+    app_from_crate!()
         .arg(
             Arg::with_name("verbose")
                 .short("v")

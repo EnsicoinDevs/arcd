@@ -2,6 +2,7 @@
 name = "another-rust-coin"
 version = "0.1.0"
 authors = ["Quentin Boyer <qbsecond@gmail.com>"]
+description = "A rust node implementing the ensicoin protocol"
 edition = "2018"
 
 [dependencies]
