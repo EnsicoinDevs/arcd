@@ -1,6 +1,5 @@
 extern crate ensicoin_serializer;
 use crate::network;
-use crate::network::Connection;
 use ensicoin_serializer::Serialize;
 
 #[derive(PartialEq, Eq, Debug)]
@@ -29,7 +28,7 @@ impl std::fmt::Display for MessageType {
 pub trait Message: Serialize {
     fn message_string() -> [u8; 12];
     fn message_type() -> MessageType;
-    fn send(&self, conn: &mut Connection) -> Result<(), network::Error> {
+    fn raw_bytes(&self) -> Result<(MessageType, Vec<u8>), network::Error> {
         let magic: u32 = 422021;
         let message_string = Self::message_string();
         let mut payload = self.serialize();
@@ -40,7 +39,6 @@ pub trait Message: Serialize {
         v.extend_from_slice(&message_string);
         v.append(&mut payload_length.serialize());
         v.append(&mut payload);
-        conn.send_bytes(Self::message_type(), v)?;
-        Ok(())
+        Ok((Self::message_type(), v))
     }
 }

@@ -1,10 +1,13 @@
 use std::net;
 use std::sync::mpsc;
 
+use crate::data::MessageType;
 use crate::network::{Connection, ConnectionMessage};
 
 pub enum ServerMessage {
-    Terminate,
+    Terminate(crate::network::Error),
+    SendMessage(MessageType, Vec<u8>),
+    HandleMessage(MessageType, Vec<u8>),
 }
 
 pub struct Server {
