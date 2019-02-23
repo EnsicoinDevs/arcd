@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use crate::data::MessageType;
 use crate::network::{Connection, ConnectionMessage};
 
+#[derive(Debug)]
 pub enum ServerMessage {
     Terminate(crate::network::Error),
     SendMessage(MessageType, Vec<u8>),

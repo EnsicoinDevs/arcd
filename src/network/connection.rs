@@ -89,15 +89,14 @@ pub struct Connection {
     stream: std::net::TcpStream,
     connection_sender: std::sync::mpsc::Sender<ConnectionMessage>,
     server_receiver: std::sync::mpsc::Receiver<ServerMessage>,
+    server_sender: std::sync::mpsc::Sender<ServerMessage>,
     version: u32,
     remote: String,
 }
 
 fn read_message(stream: &mut std::net::TcpStream) -> Result<(MessageType, Vec<u8>), Error> {
     let mut buffer: [u8; 24] = [0; 24];
-    if let Err(e) = stream.read_exact(&mut buffer) {
-        return Err(Error::IoError(e));
-    };
+    stream.read_exact(&mut buffer)?;
     let mut de = Deserializer::new(buffer.to_vec());
 
     let magic = u32::deserialize(&mut de).unwrap_or(0);
@@ -123,9 +122,7 @@ fn read_message(stream: &mut std::net::TcpStream) -> Result<(MessageType, Vec<u8
     );
 
     let mut payload: Vec<u8> = vec![0; payload_length];
-    if let Err(e) = stream.read_exact(&mut payload) {
-        return Err(Error::IoError(e));
-    };
+    stream.read_exact(&mut payload)?;
     trace!(
         "{} read out of {} in [{}]",
         payload.len(),
@@ -143,9 +140,11 @@ fn listen_stream(mut stream: std::net::TcpStream, sender: std::sync::mpsc::Sende
         );
         loop {
             match read_message(&mut stream) {
-                Ok((message_type, v)) => sender
-                    .send(ServerMessage::HandleMessage(message_type, v))
-                    .unwrap(),
+                Ok((message_type, v)) => {
+                    sender
+                        .send(ServerMessage::HandleMessage(message_type, v))
+                        .unwrap();
+                }
                 Err(read_error) => {
                     sender.send(ServerMessage::Terminate(read_error)).unwrap();
                     break;
@@ -165,6 +164,7 @@ impl Connection {
             remote: "".to_string(),
             connection_sender: sender,
             server_receiver: reciever,
+            server_sender: sender_to_connection.clone(),
         };
         conn.remote = conn.stream.peer_addr().unwrap().to_string();
         listen_stream(stream, sender_to_connection);
@@ -173,7 +173,8 @@ impl Connection {
 
     pub fn idle(mut self) {
         loop {
-            match self.server_receiver.recv() {
+            let message = self.server_receiver.recv();
+            match message {
                 Ok(msg) => match msg {
                     ServerMessage::Terminate(e) => {
                         self.terminate(e);
@@ -218,6 +219,7 @@ impl Connection {
                 remote: "".to_string(),
                 connection_sender: sender,
                 server_receiver: receiver,
+                server_sender: sender_to_connection.clone(),
             };
 
             conn.remote = conn.stream.peer_addr().unwrap().to_string();
@@ -280,10 +282,8 @@ impl Connection {
             }
             MessageType::WhoamiAck if self.state == State::Confirm => {
                 self.state = State::Ack;
-                let (sender, reciever) = std::sync::mpsc::channel();
-                self.server_receiver = reciever;
                 if let Err(_) = self.connection_sender.send(ConnectionMessage::Register(
-                    sender,
+                    self.server_sender.clone(),
                     String::from(self.remote()),
                 )) {
                     return Err(Error::ChannelError);
@@ -291,10 +291,8 @@ impl Connection {
             }
             MessageType::WhoamiAck if self.state == State::Replied => {
                 self.state = State::Ack;
-                let (sender, reciever) = std::sync::mpsc::channel();
-                self.server_receiver = reciever;
                 if let Err(_) = self.connection_sender.send(ConnectionMessage::Register(
-                    sender,
+                    self.server_sender.clone(),
                     String::from(self.remote()),
                 )) {
                     return Err(Error::ChannelError);
