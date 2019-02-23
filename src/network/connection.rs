@@ -141,12 +141,15 @@ fn listen_stream(mut stream: std::net::TcpStream, sender: std::sync::mpsc::Sende
         loop {
             match read_message(&mut stream) {
                 Ok((message_type, v)) => {
-                    sender
-                        .send(ServerMessage::HandleMessage(message_type, v))
-                        .unwrap();
+                    if let Err(_) = sender.send(ServerMessage::HandleMessage(message_type, v)) {
+                        warn!("Connection receiver failed");
+                        break;
+                    }
                 }
                 Err(read_error) => {
-                    sender.send(ServerMessage::Terminate(read_error)).unwrap();
+                    if let Err(_) = sender.send(ServerMessage::Terminate(read_error)) {
+                        warn!("Connection receiver failed");
+                    }
                     break;
                 }
             }

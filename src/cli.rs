@@ -10,6 +10,14 @@ fn is_port(v: String) -> Result<(), String> {
     }
 }
 
+fn is_u64(v: String) -> Result<(), String> {
+    let n: Result<u64, std::num::ParseIntError> = v.parse();
+    match n {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 fn is_ip(v: String) -> Result<(), String> {
     let ip: Result<std::net::IpAddr, std::net::AddrParseError> = v.parse();
     match ip {
@@ -40,6 +48,14 @@ pub fn build_cli() -> App<'static, 'static> {
                 .help("Set the listening port")
                 .default_value(DEFAULT_PORT)
                 .validator(is_port),
+        )
+        .arg(
+            Arg::with_name("max connections")
+                .short("c")
+                .long("connections")
+                .help("Specifies the maximum number of connections")
+                .default_value(crate::constants::DEFAULT_MAX_CONN)
+                .validator(is_u64),
         )
         .subcommand(
             SubCommand::with_name("completions")

@@ -38,7 +38,13 @@ fn main() {
             );
         }
         ("initiate", Some(sub_matches)) => {
-            let (server, sender) = Server::new();
+            let (server, sender) = Server::new(
+                matches
+                    .value_of("max connections")
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+            );
             server.initiate(
                 std::net::IpAddr::from_str(sub_matches.value_of("HOST_IP").unwrap()).unwrap(),
                 sub_matches.value_of("PORT").unwrap().parse().unwrap(),
@@ -47,7 +53,13 @@ fn main() {
             server.listen(listen_port, sender);
         }
         ("", _) => {
-            let (server, sender) = Server::new();
+            let (server, sender) = Server::new(
+                matches
+                    .value_of("max connections")
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+            );
             server.listen(listen_port, sender);
         }
         (_, _) => (),
