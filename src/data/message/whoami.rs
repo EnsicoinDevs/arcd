@@ -1,4 +1,4 @@
-use crate::data::{Message, MessageType};
+use super::{Message, MessageType};
 use crate::network::Address;
 use ensicoin_serializer::Result as DeserResult;
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};

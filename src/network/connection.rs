@@ -5,7 +5,7 @@ extern crate ensicoin_serializer;
 use ensicoin_serializer::{Deserialize, Deserializer};
 
 use crate::constants::MAGIC;
-use crate::data::{Message, MessageType, Whoami, WhoamiAck};
+use crate::data::message::{Message, MessageType, Whoami, WhoamiAck};
 use crate::network::{Error, ServerMessage};
 
 type ConnectionSender = std::sync::mpsc::Sender<ConnectionMessage>;
@@ -39,6 +39,9 @@ impl std::fmt::Display for State {
 pub enum ConnectionMessage {
     Disconnect(Error, String),
     Register(std::sync::mpsc::Sender<ServerMessage>, String),
+    CheckInv(crate::data::message::Inv, String),
+    Retrieve(crate::data::message::GetData, String),
+    SyncBlocks(crate::data::message::GetBlocks, String),
 }
 
 pub struct Connection {
@@ -266,6 +269,30 @@ impl Connection {
             MessageType::WhoamiAck => {
                 warn!("[{}] is not in a state accepting whoamiack", self.remote());
             }
+            MessageType::Inv => {
+                if let Err(_) = self.connection_sender.send(ConnectionMessage::CheckInv(
+                    crate::data::message::Inv::deserialize(&mut de)?,
+                    self.remote().to_string(),
+                )) {
+                    if let Err(_) = self.connection_sender.send(ConnectionMessage::CheckInv(
+                        crate::data::message::Inv::deserialize(&mut de)?,
+                        self.remote().to_string(),
+                    )) {
+                        return Err(Error::ChannelError);
+                    }
+                    return Err(Error::ChannelError);
+                }
+            }
+            MessageType::GetData => {
+                if let Err(_) = self.connection_sender.send(ConnectionMessage::Retrieve(
+                    crate::data::message::GetData::deserialize(&mut de)?,
+                    self.remote().to_string(),
+                )) {
+                    return Err(Error::ChannelError);
+                }
+            }
+            MessageType::NotFound => (),
+            MessageType::GetBlocks => {}
             MessageType::Unknown(s) => {
                 warn!("unknown message type ({}) from [{}]", s, self.remote());
             }

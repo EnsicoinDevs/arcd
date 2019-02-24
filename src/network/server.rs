@@ -1,7 +1,7 @@
 use std::net;
 use std::sync::mpsc;
 
-use crate::data::MessageType;
+use crate::data::message::MessageType;
 use crate::network::{Connection, ConnectionMessage, Error};
 
 #[derive(Debug)]
@@ -54,6 +54,9 @@ impl Server {
                     };
                     warn!("Deleted Connection [{}] because of: ({})", host, e);
                 }
+                ConnectionMessage::CheckInv(_, _) => (),
+                ConnectionMessage::Retrieve(_, _) => (),
+                ConnectionMessage::SyncBlocks(_, _) => (),
             }
         }
     }
