@@ -1,6 +1,12 @@
 extern crate ensicoin_serializer;
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 
+extern crate secp256k1;
+use secp256k1::{Message, PublicKey, Secp256k1, Signature};
+
+extern crate ripemd160;
+use ripemd160::{Digest, Ripemd160};
+
 pub enum OP {
     False,
     True,
@@ -54,16 +60,22 @@ impl Deserialize for OP {
 pub struct Script {
     code: Vec<OP>,
     stack: Vec<Vec<u8>>,
+    shash: Vec<u8>,
 }
 
 impl Script {
-    pub fn new(code: Vec<OP>) -> Script {
+    pub fn new(code: Vec<OP>, shash: Vec<u8>) -> Script {
         Script {
             code,
             stack: Vec::new(),
+            shash,
         }
     }
-    fn execute(&mut self) -> bool {
+    pub fn set_shash(&mut self, shash: Vec<u8>) {
+        self.shash = shash;
+    }
+
+    pub fn execute(&mut self) -> bool {
         let mut i: usize = 0;
         while i < self.code.len() {
             match self.code[i] {
@@ -110,8 +122,39 @@ impl Script {
                     }
                 }
                 OP::Byte(_) => return false,
-                OP::Hash160 => (),
-                OP::Checksig => (),
+                OP::Hash160 => {
+                    let mut hasher = Ripemd160::new();
+                    let top = match self.stack.pop() {
+                        None => return false,
+                        Some(x) => x,
+                    };
+                    hasher.input(top);
+                    let result = hasher.result();
+                    self.stack.push(Vec::from(result.as_slice()));
+                }
+                OP::Checksig => {
+                    let key = match self.stack.pop() {
+                        None => return false,
+                        Some(x) => match PublicKey::from_slice(&x) {
+                            Ok(k) => k,
+                            Err(_) => return false,
+                        },
+                    };
+                    let sig = match self.stack.pop() {
+                        Some(x) => match Signature::from_compact(&x) {
+                            Ok(s) => s,
+                            _ => return false,
+                        },
+                        _ => return false,
+                    };
+                    let msg = Message::from_slice(&self.shash).unwrap();
+                    let secp = Secp256k1::verification_only();
+                    if secp.verify(&msg, &sig, &key).is_ok() {
+                        self.stack.push(vec![1]);
+                    } else {
+                        self.stack.push(vec![0]);
+                    }
+                }
             }
         }
         true
@@ -147,6 +190,6 @@ impl Deserialize for Script {
                 }
             }
         }
-        Ok(Script::new(code))
+        Ok(Script::new(code, Vec::new()))
     }
 }
