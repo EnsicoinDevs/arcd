@@ -3,9 +3,20 @@ extern crate ensicoin_serializer;
 use ensicoin_serializer::types::Hash;
 use ensicoin_serializer::{Deserialize, Result, Serialize};
 
+use super::message::{Message, MessageType};
+
 pub struct GetBlocks {
     block_locator: Vec<Hash>,
     stop_hash: Hash,
+}
+
+impl Message for GetBlocks {
+    fn message_string() -> [u8; 12] {
+        [103, 101, 116, 98, 108, 111, 99, 107, 115, 0, 0, 0]
+    }
+    fn message_type() -> MessageType {
+        MessageType::GetBlocks
+    }
 }
 
 impl Deserialize for GetBlocks {

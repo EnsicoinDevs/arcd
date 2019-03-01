@@ -5,6 +5,8 @@ use ensicoin_serializer::{Deserialize, Result, Serialize};
 
 use super::message::DataType;
 
+use crate::data::message::{Message, MessageType};
+
 pub struct InvVect {
     data_type: super::message::DataType,
     hash: Hash,
@@ -46,6 +48,15 @@ pub struct Inv {
     inventory: Vec<InvVect>,
 }
 
+impl Message for Inv {
+    fn message_string() -> [u8; 12] {
+        [105, 110, 118, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+    fn message_type() -> MessageType {
+        MessageType::Inv
+    }
+}
+
 impl Deserialize for Inv {
     fn deserialize(de: &mut ensicoin_serializer::Deserializer) -> Result<Inv> {
         match Vec::deserialize(de) {
@@ -68,6 +79,15 @@ pub struct GetData {
     inventory: Vec<InvVect>,
 }
 
+impl Message for GetData {
+    fn message_string() -> [u8; 12] {
+        [103, 101, 116, 100, 97, 116, 97, 0, 0, 0, 0, 0]
+    }
+    fn message_type() -> MessageType {
+        MessageType::GetData
+    }
+}
+
 impl Deserialize for GetData {
     fn deserialize(de: &mut ensicoin_serializer::Deserializer) -> Result<GetData> {
         match Vec::deserialize(de) {
@@ -88,6 +108,15 @@ impl Serialize for GetData {
 
 pub struct NotFound {
     inventory: Vec<InvVect>,
+}
+
+impl Message for NotFound {
+    fn message_string() -> [u8; 12] {
+        [110, 111, 116, 102, 111, 117, 110, 100, 0, 0, 0, 0]
+    }
+    fn message_type() -> MessageType {
+        MessageType::NotFound
+    }
 }
 
 impl Deserialize for NotFound {

@@ -43,6 +43,7 @@ pub enum MessageType {
     GetData,
     NotFound,
     GetBlocks,
+    Transaction,
     Unknown(String),
 }
 
@@ -58,6 +59,7 @@ impl std::fmt::Display for MessageType {
                 MessageType::GetData => "GetData".to_string(),
                 MessageType::NotFound => "NotFound".to_string(),
                 MessageType::GetBlocks => "GetBlocks".to_string(),
+                MessageType::Transaction => "Transaction".to_string(),
                 MessageType::Unknown(s) => {
                     format!("Unknown: {}", s).trim_matches('\x00').to_string()
                 }
