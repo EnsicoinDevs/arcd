@@ -5,6 +5,7 @@ use ensicoin_serializer::{Deserialize, Serialize};
 use super::script::Script;
 use crate::data::message::{Message, MessageType};
 
+#[derive(Hash, Eq, PartialEq)]
 pub struct Outpoint {
     pub hash: Hash,
     pub index: u32,
