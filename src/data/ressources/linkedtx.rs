@@ -3,8 +3,13 @@ use super::tx::Transaction;
 use crate::manager::UtxoData;
 use std::collections::HashMap;
 
-pub enum Dependency {
-    Utxo(UtxoData),
+pub struct Dependency {
+    pub dep_type: DependencyType,
+    pub data: UtxoData,
+}
+
+pub enum DependencyType {
+    Block,
     Pending,
     Mempool,
 }
@@ -29,7 +34,7 @@ impl LinkedTransaction {
     }
 
     pub fn add_dependency(&mut self, outpoint: Outpoint, dep: Dependency) {
-        if let Dependency::Mempool = dep {
+        if let DependencyType::Mempool = dep.dep_type {
             self.mempool_count += 1;
         };
         if let None = self.dependencies.insert(outpoint, dep) {
@@ -38,17 +43,19 @@ impl LinkedTransaction {
     }
 
     pub fn toggle_mempool(&mut self, outpoint: Outpoint) {
-        match self.dependencies.get(&outpoint) {
-            Some(Dependency::Pending) => {
-                self.dependencies.insert(outpoint, Dependency::Mempool);
-                self.mempool_count += 1;
+        if let Some(d) = self.dependencies.get_mut(&outpoint) {
+            match d.dep_type {
+                DependencyType::Mempool => {
+                    d.dep_type = DependencyType::Pending;
+                    self.mempool_count -= 1;
+                }
+                DependencyType::Pending => {
+                    d.dep_type = DependencyType::Mempool;
+                    self.mempool_count += 1;
+                }
+                _ => (),
             }
-            Some(Dependency::Mempool) => {
-                self.dependencies.insert(outpoint, Dependency::Pending);
-                self.mempool_count -= 1;
-            }
-            _ => (),
-        };
+        }
     }
 
     pub fn is_complete(&self) -> bool {
