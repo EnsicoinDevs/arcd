@@ -42,6 +42,7 @@ pub enum ConnectionMessage {
     CheckInv(crate::data::message::Inv, String),
     Retrieve(crate::data::message::GetData, String),
     SyncBlocks(crate::data::message::GetBlocks, String),
+    NewTransaction(crate::data::ressources::Transaction),
 }
 
 pub struct Connection {
@@ -293,6 +294,17 @@ impl Connection {
             }
             MessageType::NotFound => (),
             MessageType::GetBlocks => {}
+            MessageType::Transaction => {
+                if let Err(_) = self
+                    .connection_sender
+                    .send(ConnectionMessage::NewTransaction(
+                        crate::data::ressources::Transaction::deserialize(&mut de)?,
+                    ))
+                {
+                    return Err(Error::ChannelError);
+                }
+            }
+
             MessageType::Unknown(s) => {
                 warn!("unknown message type ({}) from [{}]", s, self.remote());
             }
