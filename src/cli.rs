@@ -1,6 +1,8 @@
 use crate::constants::{DEFAULT_PORT, IP};
 use clap::{App, Arg, SubCommand};
 
+extern crate dirs;
+
 fn is_port(v: String) -> Result<(), String> {
     let n: Result<u16, std::num::ParseIntError> = v.parse();
     match n {
@@ -24,6 +26,14 @@ fn is_ip(v: String) -> Result<(), String> {
         Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+lazy_static! {
+    static ref DATA_DIR: std::path::PathBuf = {
+        let mut path = dirs::data_dir().unwrap();
+        path.push(r"another-rust-coin");
+        path
+    };
 }
 
 pub fn build_cli() -> App<'static, 'static> {
@@ -56,6 +66,13 @@ pub fn build_cli() -> App<'static, 'static> {
                 .help("Specifies the maximum number of connections")
                 .default_value(crate::constants::DEFAULT_MAX_CONN)
                 .validator(is_u64),
+        )
+        .arg(
+            Arg::with_name("datadir")
+                .short("d")
+                .long("data")
+                .help("Data root folder")
+                .default_value(DATA_DIR.to_str().unwrap()),
         )
         .subcommand(
             SubCommand::with_name("completions")

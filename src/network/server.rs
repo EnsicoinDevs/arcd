@@ -2,6 +2,7 @@ use std::net;
 use std::sync::mpsc;
 
 use crate::data::message::MessageType;
+use crate::manager::UtxoManager;
 use crate::network::{Connection, ConnectionMessage, Error};
 
 #[derive(Debug)]
@@ -14,18 +15,23 @@ pub enum ServerMessage {
 pub struct Server {
     connection_receiver: mpsc::Receiver<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
+    utxo_manager: UtxoManager,
     collection_count: u64,
     max_connections_count: u64,
 }
 
 impl Server {
-    pub fn new(max_conn: u64) -> (Server, mpsc::Sender<ConnectionMessage>) {
+    pub fn new(
+        max_conn: u64,
+        data_dir: &std::path::Path,
+    ) -> (Server, mpsc::Sender<ConnectionMessage>) {
         let (sender, reciever) = mpsc::channel();
         let server = Server {
             connections: std::collections::HashMap::new(),
             connection_receiver: reciever,
             collection_count: 0,
             max_connections_count: max_conn,
+            utxo_manager: UtxoManager::new(data_dir),
         };
         info!("Node started");
         (server, sender)
@@ -57,6 +63,7 @@ impl Server {
                 ConnectionMessage::CheckInv(_, _) => (),
                 ConnectionMessage::Retrieve(_, _) => (),
                 ConnectionMessage::SyncBlocks(_, _) => (),
+                ConnectionMessage::NewTransaction(_) => (),
             }
         }
     }

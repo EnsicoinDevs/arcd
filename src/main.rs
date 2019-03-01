@@ -1,6 +1,7 @@
 mod cli;
 mod constants;
 mod data;
+mod manager;
 mod network;
 
 use network::Server;
@@ -10,6 +11,8 @@ extern crate clap;
 extern crate simplelog;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
 use std::io;
 use std::str::FromStr;
@@ -28,6 +31,9 @@ fn main() {
 
     let listen_port = matches.value_of("port").unwrap().parse().unwrap();
 
+    let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
+    std::fs::create_dir_all(&data_dir).unwrap();
+
     match matches.subcommand() {
         ("completions", Some(sub_matches)) => {
             let shell = sub_matches.value_of("SHELL").unwrap();
@@ -44,6 +50,7 @@ fn main() {
                     .unwrap()
                     .parse()
                     .unwrap(),
+                &data_dir,
             );
             server.initiate(
                 std::net::IpAddr::from_str(sub_matches.value_of("HOST_IP").unwrap()).unwrap(),
@@ -59,6 +66,7 @@ fn main() {
                     .unwrap()
                     .parse()
                     .unwrap(),
+                &data_dir,
             );
             server.listen(listen_port, sender);
         }
