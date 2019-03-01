@@ -3,10 +3,11 @@ use ensicoin_serializer::types::Hash;
 use ensicoin_serializer::{Deserialize, Serialize};
 
 use super::script::Script;
+use crate::data::message::{Message, MessageType};
 
 pub struct Outpoint {
-    hash: Hash,
-    index: u32,
+    pub hash: Hash,
+    pub index: u32,
 }
 
 impl Serialize for Outpoint {
@@ -90,6 +91,15 @@ pub struct TransactionOutput {
     script: Script,
 }
 
+impl TransactionOutput {
+    pub fn get_value(&self) -> &u64 {
+        &self.value
+    }
+    pub fn get_script(&self) -> &Script {
+        &self.script
+    }
+}
+
 impl Deserialize for TransactionOutput {
     fn deserialize(
         de: &mut ensicoin_serializer::Deserializer,
@@ -129,6 +139,21 @@ pub struct Transaction {
     flags: Vec<String>,
     inputs: Vec<TransactionInput>,
     outputs: Vec<TransactionOutput>,
+}
+
+impl Transaction {
+    pub fn get_outputs(&self) -> &Vec<TransactionOutput> {
+        &self.outputs
+    }
+}
+
+impl Message for Transaction {
+    fn message_string() -> [u8; 12] {
+        [116, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+    fn message_type() -> MessageType {
+        MessageType::Transaction
+    }
 }
 
 impl Serialize for Transaction {
