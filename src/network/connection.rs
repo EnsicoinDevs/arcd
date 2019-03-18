@@ -5,6 +5,7 @@ extern crate ensicoin_serializer;
 use ensicoin_serializer::{Deserialize, Deserializer};
 
 use crate::constants::MAGIC;
+use crate::data::message;
 use crate::data::message::{Message, MessageType, Whoami, WhoamiAck};
 use crate::network::{Error, ServerMessage};
 
@@ -308,6 +309,11 @@ impl Connection {
             MessageType::Unknown(s) => {
                 warn!("unknown message type ({}) from [{}]", s, self.remote());
             }
+            MessageType::Ping => {
+                let (t, v) = message::Pong::new().raw_bytes()?;
+                self.send_bytes(t, v)?;
+            }
+            MessageType::Pong => (),
         };
         Ok(())
     }

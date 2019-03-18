@@ -44,6 +44,8 @@ pub enum MessageType {
     NotFound,
     GetBlocks,
     Transaction,
+    Ping,
+    Pong,
     Unknown(String),
 }
 
@@ -53,6 +55,8 @@ impl std::fmt::Display for MessageType {
             f,
             "{}",
             match self {
+                MessageType::Ping => "2plus2is4".to_string(),
+                MessageType::Pong => "minus1thats3".to_string(),
                 MessageType::Whoami => "Whoami".to_string(),
                 MessageType::WhoamiAck => "WhoamiAck".to_string(),
                 MessageType::Inv => "Inv".to_string(),
