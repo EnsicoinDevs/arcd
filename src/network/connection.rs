@@ -65,17 +65,8 @@ fn read_message(stream: &mut std::net::TcpStream) -> Result<(MessageType, Vec<u8
     if magic != MAGIC {
         return Err(Error::InvalidMagic(magic));
     };
-    let message_type = de
-        .extract_bytes(12)
-        .unwrap_or(vec![117, 110, 107, 110, 111, 119, 110]); // "unknown"
+    let message_type = MessageType::deserialize(&mut de).unwrap();
     let payload_length = u64::deserialize(&mut de).unwrap_or(0) as usize;
-
-    let message_type = String::from_utf8(message_type).unwrap();
-    let message_type = match message_type.as_ref() {
-        "whoami\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}" => MessageType::Whoami,
-        "whoamiack\u{0}\u{0}\u{0}" => MessageType::WhoamiAck,
-        _ => MessageType::Unknown(message_type),
-    };
 
     info!(
         "{:?} from [{}]",
@@ -100,11 +91,26 @@ fn listen_stream(mut stream: std::net::TcpStream, sender: std::sync::mpsc::Sende
             "Listening for [{}]",
             stream.peer_addr().unwrap().to_string()
         );
+        stream
+            .set_read_timeout(Some(std::time::Duration::new(42, 0)))
+            .expect("Failed to set timeout");
+        let mut last_ping = std::time::Instant::now();
+        let mut waiting_ping = false;
         loop {
             match read_message(&mut stream) {
                 Ok((message_type, v)) => {
                     if let Err(_) = sender.send(ServerMessage::HandleMessage(message_type, v)) {
                         warn!("Connection receiver failed");
+                        break;
+                    }
+                }
+                Err(Error::IoError(e)) => {
+                    if !(e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut)
+                    {
+                        if let Err(_) = sender.send(ServerMessage::Terminate(Error::IoError(e))) {
+                            warn!("Connection receiver failed");
+                        }
                         break;
                     }
                 }
@@ -115,6 +121,23 @@ fn listen_stream(mut stream: std::net::TcpStream, sender: std::sync::mpsc::Sende
                     break;
                 }
             }
+            if last_ping.elapsed() >= std::time::Duration::new(42, 0) {
+                if !waiting_ping {
+                    if let Err(_) =
+                        sender.send(ServerMessage::SendMessage(MessageType::Ping, vec![]))
+                    {
+                        warn!("Connection receiver failed");
+                        break;
+                    };
+                    waiting_ping = true;
+                    last_ping = std::time::Instant::now();
+                } else {
+                    if let Err(_) = sender.send(ServerMessage::Terminate(Error::NoResponse)) {
+                        warn!("Connection receiver failed");
+                    }
+                    break;
+                }
+            };
         }
     });
 }
@@ -306,8 +329,8 @@ impl Connection {
                 }
             }
 
-            MessageType::Unknown(s) => {
-                warn!("unknown message type ({}) from [{}]", s, self.remote());
+            MessageType::Unknown(_) => {
+                warn!("unknown message type ({}) from [{}]", t, self.remote());
             }
             MessageType::Ping => {
                 let (t, v) = message::Pong::new().raw_bytes()?;

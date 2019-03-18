@@ -12,11 +12,13 @@ pub enum Error {
     ChannelReceiverError(std::sync::mpsc::RecvError),
     ChannelError,
     ServerTermination,
+    NoResponse,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Error::NoResponse => write!(f, "No response to ping"),
             Error::ParseError(e) => write!(f, "Parse error: {}", e),
             Error::InvalidState(st) => write!(f, "Connection is in invalid state: {}", st),
             Error::IoError(e) => write!(f, "IoError: {}", e),
