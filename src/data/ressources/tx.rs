@@ -5,7 +5,7 @@ use ensicoin_serializer::{Deserialize, Serialize};
 use super::script::Script;
 use crate::data::message::{Message, MessageType};
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Clone)]
 pub struct Outpoint {
     pub hash: Hash,
     pub index: u32,
@@ -45,8 +45,9 @@ impl Deserialize for Outpoint {
     }
 }
 
+#[derive(Hash, PartialEq, Eq)]
 pub struct TransactionInput {
-    previous_output: Outpoint,
+    pub previous_output: Outpoint,
     script: Script,
 }
 
@@ -87,6 +88,7 @@ impl Deserialize for TransactionInput {
     }
 }
 
+#[derive(Hash, PartialEq, Eq)]
 pub struct TransactionOutput {
     value: u64,
     script: Script,
@@ -135,6 +137,7 @@ impl Serialize for TransactionOutput {
     }
 }
 
+#[derive(Hash, PartialEq, Eq)]
 pub struct Transaction {
     version: u32,
     flags: Vec<String>,
@@ -145,6 +148,10 @@ pub struct Transaction {
 impl Transaction {
     pub fn get_outputs(&self) -> &Vec<TransactionOutput> {
         &self.outputs
+    }
+
+    pub fn get_inputs(&self) -> &Vec<TransactionInput> {
+        &self.inputs
     }
 }
 

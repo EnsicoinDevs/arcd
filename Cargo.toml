@@ -6,7 +6,7 @@ description = "A rust node implementing the ensicoin protocol"
 edition = "2018"
 
 [dependencies]
-ensicoin_serializer = "0.4.2"
+ensicoin_serializer = "0.4.3"
 log = "0.4"
 simplelog = "^0.5.0"
 clap = "2.32.0"

@@ -7,6 +7,7 @@ use secp256k1::{Message, PublicKey, Secp256k1, Signature};
 extern crate ripemd160;
 use ripemd160::{Digest, Ripemd160};
 
+#[derive(Hash, PartialEq, Eq)]
 pub enum OP {
     False,
     True,
@@ -57,6 +58,7 @@ impl Deserialize for OP {
     }
 }
 
+#[derive(Hash, PartialEq, Eq)]
 pub struct Script {
     code: Vec<OP>,
     stack: Vec<Vec<u8>>,

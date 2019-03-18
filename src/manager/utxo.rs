@@ -60,14 +60,14 @@ impl UtxoManager {
         }
         Ok(())
     }
-    pub fn exists(&self, utxo: Outpoint) -> Result<bool, Error> {
+    pub fn exists(&self, utxo: &Outpoint) -> Result<bool, Error> {
         Ok(match self.database.get(utxo.serialize())? {
             Some(_) => true,
             None => false,
         })
     }
 
-    pub fn get(&self, utxo: Outpoint) -> Result<UtxoData, Error> {
+    pub fn get(&self, utxo: &Outpoint) -> Result<UtxoData, Error> {
         match self.database.get(utxo.serialize())? {
             Some(x) => {
                 let mut de = ensicoin_serializer::Deserializer::new(Vec::from(&*x));
@@ -77,12 +77,27 @@ impl UtxoManager {
         }
     }
 
-    pub fn delete(&self, utxo: Outpoint) -> Result<(), Error> {
+    pub fn delete(&self, utxo: &Outpoint) -> Result<(), Error> {
         self.database.del(utxo.serialize())?;
         Ok(())
     }
+
+    pub fn link(&self, linkedtx: &mut crate::data::ressources::LinkedTransaction) {
+        for parent in linkedtx.unknown().clone() {
+            if let Ok(utxo) = self.get(&parent) {
+                linkedtx.add_dependency(
+                    parent.clone(),
+                    crate::data::ressources::Dependency {
+                        data: utxo,
+                        dep_type: crate::data::ressources::DependencyType::Block,
+                    },
+                );
+            }
+        }
+    }
 }
 
+#[derive(PartialEq, Eq)]
 pub struct UtxoData {
     script: Script,
     value: u64,

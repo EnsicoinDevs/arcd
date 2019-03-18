@@ -2,12 +2,15 @@ use super::tx::Outpoint;
 use super::tx::Transaction;
 use crate::manager::UtxoData;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
+#[derive(PartialEq, Eq)]
 pub struct Dependency {
     pub dep_type: DependencyType,
     pub data: UtxoData,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum DependencyType {
     Block,
     Pending,
@@ -18,19 +21,47 @@ pub struct LinkedTransaction {
     transaction: Transaction,
     input_count: usize,
     dependencies: HashMap<Outpoint, Dependency>,
+    unknown_parent: HashSet<Outpoint>,
     dep_count: usize,
     mempool_count: usize,
 }
 
+impl std::hash::Hash for LinkedTransaction {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.transaction.hash(state);
+    }
+}
+
+impl PartialEq for LinkedTransaction {
+    fn eq(&self, other: &LinkedTransaction) -> bool {
+        self.transaction == other.transaction
+    }
+}
+
+impl Eq for LinkedTransaction {}
+
 impl LinkedTransaction {
     pub fn new(tx: Transaction) -> LinkedTransaction {
-        LinkedTransaction {
+        let mut ltx = LinkedTransaction {
             transaction: tx,
             input_count: 0,
             dependencies: HashMap::new(),
+            unknown_parent: HashSet::new(),
             dep_count: 0,
             mempool_count: 0,
+        };
+        ltx.init_parents();
+        ltx
+    }
+
+    fn init_parents(&mut self) {
+        for input in self.transaction.get_inputs() {
+            self.unknown_parent.insert(input.previous_output.clone());
         }
+    }
+
+    pub fn unknown(&self) -> &HashSet<Outpoint> {
+        &self.unknown_parent
     }
 
     pub fn add_dependency(&mut self, outpoint: Outpoint, dep: Dependency) {
