@@ -1,5 +1,3 @@
-extern crate ensicoin_serializer;
-
 use ensicoin_serializer::types::Hash;
 use ensicoin_serializer::{Deserialize, Result, Serialize};
 

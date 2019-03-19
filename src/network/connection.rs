@@ -1,7 +1,6 @@
 use std::io::Read;
 use std::io::Write;
 
-extern crate ensicoin_serializer;
 use ensicoin_serializer::{Deserialize, Deserializer};
 
 use crate::constants::MAGIC;

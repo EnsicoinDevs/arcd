@@ -1,8 +1,6 @@
 use crate::constants::{DEFAULT_PORT, IP};
 use clap::{App, Arg, SubCommand};
 
-extern crate dirs;
-
 fn is_port(v: String) -> Result<(), String> {
     let n: Result<u16, std::num::ParseIntError> = v.parse();
     match n {

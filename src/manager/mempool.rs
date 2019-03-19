@@ -11,4 +11,5 @@ impl Mempool {
             pool: HashSet::new(),
         }
     }
+    pub fn insert(linked_tx: LinkedTransaction) {}
 }

@@ -1,4 +1,6 @@
-extern crate ensicoin_serializer;
+use generic_array::GenericArray;
+use sha2::{Digest, Sha256};
+type Sha256Result = GenericArray<u8, typenum::U32>;
 use ensicoin_serializer::types::Hash;
 use ensicoin_serializer::{Deserialize, Serialize};
 
@@ -152,6 +154,12 @@ impl Transaction {
 
     pub fn get_inputs(&self) -> &Vec<TransactionInput> {
         &self.inputs
+    }
+    pub fn double_hash(&self) -> Sha256Result {
+        let bytes = self.serialize();
+        let mut hasher = sha2::Sha256::default();
+        hasher.input(bytes);
+        hasher.result()
     }
 }
 

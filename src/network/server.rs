@@ -2,7 +2,7 @@ use std::net;
 use std::sync::mpsc;
 
 use crate::data::message::MessageType;
-use crate::manager::UtxoManager;
+use crate::manager::{Mempool, UtxoManager};
 use crate::network::{Connection, ConnectionMessage, Error};
 
 #[derive(Debug)]
@@ -16,6 +16,7 @@ pub struct Server {
     connection_receiver: mpsc::Receiver<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     utxo_manager: UtxoManager,
+    mempool: Mempool,
     collection_count: u64,
     max_connections_count: u64,
 }
@@ -32,6 +33,7 @@ impl Server {
             collection_count: 0,
             max_connections_count: max_conn,
             utxo_manager: UtxoManager::new(data_dir),
+            mempool: Mempool::new(),
         };
         info!("Node started");
         (server, sender)

@@ -1,4 +1,3 @@
-extern crate ensicoin_serializer;
 use crate::network;
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 

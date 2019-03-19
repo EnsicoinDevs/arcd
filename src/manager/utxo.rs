@@ -1,10 +1,7 @@
-extern crate sled;
-
 use crate::data::ressources::Script;
 use crate::data::Outpoint;
 use crate::data::Transaction;
 
-extern crate ensicoin_serializer;
 use ensicoin_serializer::{Deserialize, Serialize};
 
 pub enum Error {

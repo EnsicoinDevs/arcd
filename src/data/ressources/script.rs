@@ -1,11 +1,6 @@
-extern crate ensicoin_serializer;
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
-
-extern crate secp256k1;
-use secp256k1::{Message, PublicKey, Secp256k1, Signature};
-
-extern crate ripemd160;
 use ripemd160::{Digest, Ripemd160};
+use secp256k1::{Message, PublicKey, Secp256k1, Signature};
 
 #[derive(Hash, PartialEq, Eq)]
 pub enum OP {

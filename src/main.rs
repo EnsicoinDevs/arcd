@@ -8,11 +8,24 @@ use network::Server;
 
 #[macro_use]
 extern crate clap;
-extern crate simplelog;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
+
+extern crate simplelog;
+
+extern crate dirs;
+
+extern crate sled;
+
+extern crate ensicoin_serializer;
+
+extern crate generic_array;
+extern crate ripemd160;
+extern crate secp256k1;
+extern crate sha2;
+extern crate typenum;
 
 use std::io;
 use std::str::FromStr;

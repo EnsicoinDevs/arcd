@@ -1,5 +1,3 @@
-extern crate ensicoin_serializer;
-
 use super::connection::State;
 use crate::constants::MAGIC;
 
