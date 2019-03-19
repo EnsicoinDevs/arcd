@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+import "types.proto";
+
+package ensicoin_rpc.node;
+
+enum Error {
+    INVALID_DATA = 0;
+}
+
+message Response {
+  Error error = 1;
+}
+
+service Node {
+  rpc PublishRawTx(ensicoin_rpc.RawTx) returns (Response) {}
+  rpc PublishRawBlock(ensicoin_rpc.RawBlock) returns (Response) {}
+}
