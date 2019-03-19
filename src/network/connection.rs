@@ -92,13 +92,16 @@ fn listen_stream(mut stream: std::net::TcpStream, sender: std::sync::mpsc::Sende
             stream.peer_addr().unwrap().to_string()
         );
         stream
-            .set_read_timeout(Some(std::time::Duration::new(42, 0)))
+            .set_read_timeout(Some(std::time::Duration::new(20, 0)))
             .expect("Failed to set timeout");
         let mut last_ping = std::time::Instant::now();
         let mut waiting_ping = false;
         loop {
             match read_message(&mut stream) {
                 Ok((message_type, v)) => {
+                    if message_type == MessageType::Pong {
+                        waiting_ping = false;
+                    };
                     if let Err(_) = sender.send(ServerMessage::HandleMessage(message_type, v)) {
                         warn!("Connection receiver failed");
                         break;
