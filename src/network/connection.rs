@@ -5,7 +5,7 @@ use ensicoin_serializer::{Deserialize, Deserializer};
 
 use crate::constants::MAGIC;
 use crate::data::message;
-use crate::data::message::{Message, MessageType, Whoami, WhoamiAck};
+use crate::data::message::{Message, MessageType, Ping, Pong, Whoami, WhoamiAck};
 use crate::network::{Error, ServerMessage};
 
 type ConnectionSender = std::sync::mpsc::Sender<ConnectionMessage>;
@@ -68,12 +68,13 @@ fn read_message(stream: &mut std::net::TcpStream) -> Result<(MessageType, Vec<u8
     let payload_length = u64::deserialize(&mut de).unwrap_or(0) as usize;
 
     info!(
-        "{:?} from [{}]",
+        "{} from [{}]",
         message_type,
         stream.peer_addr().unwrap().to_string()
     );
 
     let mut payload: Vec<u8> = vec![0; payload_length];
+    trace!("Reading {} bytes of payload", payload_length);
     stream.read_exact(&mut payload)?;
     trace!(
         "{} read out of {} in [{}]",
@@ -85,63 +86,76 @@ fn read_message(stream: &mut std::net::TcpStream) -> Result<(MessageType, Vec<u8
 }
 
 fn listen_stream(mut stream: std::net::TcpStream, sender: std::sync::mpsc::Sender<ServerMessage>) {
-    std::thread::spawn(move || {
-        trace!(
-            "Listening for [{}]",
+    let error_sender = sender.clone();
+    match std::thread::Builder::new()
+        .name(format!(
+            "{}:listener",
             stream.peer_addr().unwrap().to_string()
-        );
-        stream
-            .set_read_timeout(Some(std::time::Duration::new(20, 0)))
-            .expect("Failed to set timeout");
-        let mut last_ping = std::time::Instant::now();
-        let mut waiting_ping = false;
-        loop {
-            match read_message(&mut stream) {
-                Ok((message_type, v)) => {
-                    if message_type == MessageType::Pong {
-                        waiting_ping = false;
-                    };
-                    if let Err(_) = sender.send(ServerMessage::HandleMessage(message_type, v)) {
-                        warn!("Connection receiver failed");
-                        break;
+        ))
+        .spawn(move || {
+            trace!(
+                "Listening for [{}]",
+                stream.peer_addr().unwrap().to_string()
+            );
+            stream
+                .set_read_timeout(Some(std::time::Duration::new(20, 0)))
+                .expect("Failed to set timeout");
+            let mut last_ping = std::time::Instant::now();
+            let mut waiting_ping = false;
+            loop {
+                match read_message(&mut stream) {
+                    Ok((message_type, v)) => {
+                        if message_type == MessageType::Pong {
+                            waiting_ping = false;
+                        };
+                        if let Err(_) = sender.send(ServerMessage::HandleMessage(message_type, v)) {
+                            warn!("Connection receiver failed");
+                            break;
+                        }
                     }
-                }
-                Err(Error::IoError(e)) => {
-                    if !(e.kind() == std::io::ErrorKind::WouldBlock
-                        || e.kind() == std::io::ErrorKind::TimedOut)
-                    {
-                        if let Err(_) = sender.send(ServerMessage::Terminate(Error::IoError(e))) {
+                    Err(Error::IoError(e)) => {
+                        if !(e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut)
+                        {
+                            if let Err(_) = sender.send(ServerMessage::Terminate(Error::IoError(e)))
+                            {
+                                warn!("Connection receiver failed");
+                            }
+                            break;
+                        }
+                    }
+                    Err(read_error) => {
+                        if let Err(_) = sender.send(ServerMessage::Terminate(read_error)) {
                             warn!("Connection receiver failed");
                         }
                         break;
                     }
                 }
-                Err(read_error) => {
-                    if let Err(_) = sender.send(ServerMessage::Terminate(read_error)) {
-                        warn!("Connection receiver failed");
-                    }
-                    break;
-                }
-            }
-            if last_ping.elapsed() >= std::time::Duration::new(42, 0) {
-                if !waiting_ping {
-                    if let Err(_) =
-                        sender.send(ServerMessage::SendMessage(MessageType::Ping, vec![]))
-                    {
-                        warn!("Connection receiver failed");
+                if last_ping.elapsed() >= std::time::Duration::new(42, 0) {
+                    if !waiting_ping {
+                        let (t, v) = Ping::new().raw_bytes().unwrap();
+                        if let Err(_) = sender.send(ServerMessage::SendMessage(t, v)) {
+                            warn!("Connection receiver failed");
+                            break;
+                        };
+                        waiting_ping = true;
+                        last_ping = std::time::Instant::now();
+                    } else {
+                        if let Err(_) = sender.send(ServerMessage::Terminate(Error::NoResponse)) {
+                            warn!("Connection receiver failed");
+                        }
                         break;
-                    };
-                    waiting_ping = true;
-                    last_ping = std::time::Instant::now();
-                } else {
-                    if let Err(_) = sender.send(ServerMessage::Terminate(Error::NoResponse)) {
-                        warn!("Connection receiver failed");
                     }
-                    break;
-                }
-            };
+                };
+            }
+        }) {
+        Ok(_) => (),
+        Err(e) => {
+            if let Err(_) = error_sender.send(ServerMessage::Terminate(Error::IoError(e))) {
+                warn!("Connection receiver failed");
+            }
         }
-    });
+    }
 }
 
 impl Connection {
@@ -165,24 +179,27 @@ impl Connection {
         loop {
             let message = self.server_receiver.recv();
             match message {
-                Ok(msg) => match msg {
-                    ServerMessage::Terminate(e) => {
-                        self.terminate(e);
-                        break;
-                    }
-                    ServerMessage::SendMessage(t, v) => {
-                        if let Err(e) = self.send_bytes(t, v) {
+                Ok(msg) => {
+                    trace!("Handling server message: {:?}", msg);
+                    match msg {
+                        ServerMessage::Terminate(e) => {
                             self.terminate(e);
                             break;
                         }
-                    }
-                    ServerMessage::HandleMessage(t, v) => {
-                        if let Err(e) = self.handle_message(t, v) {
-                            self.terminate(e);
-                            break;
+                        ServerMessage::SendMessage(t, v) => {
+                            if let Err(e) = self.send_bytes(t, v) {
+                                self.terminate(e);
+                                break;
+                            }
+                        }
+                        ServerMessage::HandleMessage(t, v) => {
+                            if let Err(e) = self.handle_message(t, v) {
+                                self.terminate(e);
+                                break;
+                            }
                         }
                     }
-                },
+                }
                 Err(e) => {
                     self.terminate(Error::from(e));
                     break;
@@ -236,7 +253,7 @@ impl Connection {
             if let Err(e) = self.stream.write(&v) {
                 return Err(Error::IoError(e));
             };
-            info!("{:?} to [{}]", t, self.remote());
+            info!("{} to [{}]", t, self.remote());
             Ok(())
         } else {
             Err(Error::InvalidState(self.state.clone()))
