@@ -2,7 +2,7 @@ use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 use ripemd160::{Digest, Ripemd160};
 use secp256k1::{Message, PublicKey, Secp256k1, Signature};
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, Clone, PartialEq, Eq)]
 pub enum OP {
     False,
     True,
@@ -155,6 +155,16 @@ impl Script {
             }
         }
         true
+    }
+}
+
+impl Clone for Script {
+    fn clone(&self) -> Self {
+        Script {
+            code: self.code.clone(),
+            shash: self.shash.clone(),
+            stack: Vec::new(),
+        }
     }
 }
 
