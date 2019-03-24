@@ -71,18 +71,25 @@ impl Server {
     }
 
     pub fn listen(self, port: u16, sender: mpsc::Sender<ConnectionMessage>) {
-        let listener = net::TcpListener::bind(("127.0.0.1", port)).unwrap();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let stream = stream.unwrap().try_clone().unwrap();
-                let sender = sender.clone();
-                std::thread::spawn(move || {
-                    let conn = Connection::new(stream, sender.clone());
-                    trace!("new connection");
-                    conn.idle();
-                });
-            }
-        });
+        let listener = net::TcpListener::bind(("0.0.0.0", port)).unwrap();
+        std::thread::Builder::new()
+            .name("Server Listener".to_string())
+            .spawn(move || {
+                for stream in listener.incoming() {
+                    let stream = stream.unwrap().try_clone().unwrap();
+                    let sender = sender.clone();
+                    // TODO: add connection limit
+                    std::thread::Builder::new()
+                        .name(stream.peer_addr().unwrap().to_string())
+                        .spawn(move || {
+                            let conn = Connection::new(stream, sender.clone());
+                            trace!("new connection");
+                            conn.idle();
+                        })
+                        .unwrap();
+                }
+            })
+            .unwrap();
         self.idle();
     }
 
