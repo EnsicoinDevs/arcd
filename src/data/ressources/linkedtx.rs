@@ -1,8 +1,10 @@
 use super::tx::Outpoint;
 use super::tx::Transaction;
+use crate::constants::Sha256Result;
 use crate::manager::UtxoData;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Deref;
 
 #[derive(PartialEq, Eq)]
 pub struct Dependency {
@@ -26,12 +28,6 @@ pub struct LinkedTransaction {
     mempool_count: usize,
 }
 
-impl std::hash::Hash for LinkedTransaction {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.transaction.hash(state);
-    }
-}
-
 impl PartialEq for LinkedTransaction {
     fn eq(&self, other: &LinkedTransaction) -> bool {
         self.transaction == other.transaction
@@ -39,6 +35,14 @@ impl PartialEq for LinkedTransaction {
 }
 
 impl Eq for LinkedTransaction {}
+
+impl Deref for LinkedTransaction {
+    type Target = Transaction;
+
+    fn deref(&self) -> &Transaction {
+        &self.transaction
+    }
+}
 
 impl LinkedTransaction {
     pub fn new(tx: Transaction) -> LinkedTransaction {
