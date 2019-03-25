@@ -1,15 +1,14 @@
+use ensicoin_serializer::types::Sha256Result;
+use ensicoin_serializer::{Deserialize, Serialize};
 use generic_array::GenericArray;
 use sha2::{Digest, Sha256};
-type Sha256Result = GenericArray<u8, typenum::U32>;
-use ensicoin_serializer::types::Hash;
-use ensicoin_serializer::{Deserialize, Serialize};
 
 use super::script::Script;
 use crate::data::message::{Message, MessageType};
 
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub struct Outpoint {
-    pub hash: Hash,
+    pub hash: Sha256Result,
     pub index: u32,
 }
 
@@ -25,7 +24,7 @@ impl Deserialize for Outpoint {
     fn deserialize(
         de: &mut ensicoin_serializer::Deserializer,
     ) -> ensicoin_serializer::Result<Outpoint> {
-        let hash = match Hash::deserialize(de) {
+        let hash = match Sha256Result::deserialize(de) {
             Ok(h) => h,
             Err(e) => {
                 return Err(ensicoin_serializer::Error::Message(format!(

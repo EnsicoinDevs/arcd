@@ -1,4 +1,4 @@
-use ensicoin_serializer::types::Hash;
+use ensicoin_serializer::types::Sha256Result;
 use ensicoin_serializer::{Deserialize, Result, Serialize};
 
 use super::message::DataType;
@@ -7,7 +7,7 @@ use crate::data::message::{Message, MessageType};
 
 pub struct InvVect {
     data_type: super::message::DataType,
-    hash: Hash,
+    hash: Sha256Result,
 }
 
 impl Deserialize for InvVect {
@@ -21,7 +21,7 @@ impl Deserialize for InvVect {
                 )));
             }
         };
-        let hash = match Hash::deserialize(de) {
+        let hash = match Sha256Result::deserialize(de) {
             Ok(h) => h,
             Err(e) => {
                 return Err(ensicoin_serializer::Error::Message(format!(

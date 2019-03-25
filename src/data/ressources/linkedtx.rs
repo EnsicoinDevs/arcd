@@ -1,10 +1,8 @@
 use super::tx::Outpoint;
 use super::tx::Transaction;
-use crate::constants::Sha256Result;
 use crate::manager::UtxoData;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::ops::Deref;
 
 #[derive(PartialEq, Eq)]
 pub struct Dependency {

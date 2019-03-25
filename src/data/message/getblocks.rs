@@ -1,11 +1,11 @@
-use ensicoin_serializer::types::Hash;
+use ensicoin_serializer::types::Sha256Result;
 use ensicoin_serializer::{Deserialize, Result, Serialize};
 
 use super::message::{Message, MessageType};
 
 pub struct GetBlocks {
-    block_locator: Vec<Hash>,
-    stop_hash: Hash,
+    block_locator: Vec<Sha256Result>,
+    stop_hash: Sha256Result,
 }
 
 impl Message for GetBlocks {
@@ -28,7 +28,7 @@ impl Deserialize for GetBlocks {
                 )));
             }
         };
-        let stop_hash = match Hash::deserialize(de) {
+        let stop_hash = match Sha256Result::deserialize(de) {
             Ok(hash) => hash,
             Err(e) => {
                 return Err(ensicoin_serializer::Error::Message(format!(

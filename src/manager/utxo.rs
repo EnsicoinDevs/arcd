@@ -2,7 +2,7 @@ use crate::data::ressources::Script;
 use crate::data::Outpoint;
 use crate::data::Transaction;
 
-use ensicoin_serializer::{Deserialize, Serialize};
+use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
 pub enum Error {
     DatabaseError(sled::Error<()>),
@@ -48,9 +48,7 @@ impl UtxoManager {
             data.append(&mut block_height.serialize());
             data.append(&mut (coin_base as u8).serialize());
             let outpoint = Outpoint {
-                hash: ensicoin_serializer::types::Hash {
-                    value: Vec::from(hash),
-                },
+                hash: Sha256Result::clone_from_slice(hash),
                 index: (i as u32),
             };
             self.database.set(outpoint.serialize(), data)?;

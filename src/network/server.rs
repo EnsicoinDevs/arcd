@@ -2,6 +2,7 @@ use std::net;
 use std::sync::mpsc;
 
 use crate::data::message::MessageType;
+use crate::data::ressources::LinkedTransaction;
 use crate::manager::{Mempool, UtxoManager};
 use crate::network::{Connection, ConnectionMessage, Error};
 
@@ -65,7 +66,11 @@ impl Server {
                 ConnectionMessage::CheckInv(_, _) => (),
                 ConnectionMessage::Retrieve(_, _) => (),
                 ConnectionMessage::SyncBlocks(_, _) => (),
-                ConnectionMessage::NewTransaction(_) => (),
+                ConnectionMessage::NewTransaction(tx) => {
+                    let mut ltx = LinkedTransaction::new(tx);
+                    self.utxo_manager.link(&mut ltx);
+                    self.mempool.insert(ltx);
+                }
             }
         }
     }
