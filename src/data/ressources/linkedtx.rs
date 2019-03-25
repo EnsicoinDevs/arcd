@@ -20,7 +20,7 @@ pub enum DependencyType {
 }
 
 pub struct LinkedTransaction {
-    transaction: Transaction,
+    pub transaction: Transaction,
     input_count: usize,
     dependencies: HashMap<Outpoint, Dependency>,
     unknown_parent: HashSet<Outpoint>,
@@ -35,14 +35,6 @@ impl PartialEq for LinkedTransaction {
 }
 
 impl Eq for LinkedTransaction {}
-
-impl Deref for LinkedTransaction {
-    type Target = Transaction;
-
-    fn deref(&self) -> &Transaction {
-        &self.transaction
-    }
-}
 
 impl LinkedTransaction {
     pub fn new(tx: Transaction) -> LinkedTransaction {
@@ -69,6 +61,7 @@ impl LinkedTransaction {
     }
 
     pub fn add_dependency(&mut self, outpoint: Outpoint, dep: Dependency) {
+        self.unknown_parent.remove(&outpoint);
         if let DependencyType::Mempool = dep.dep_type {
             self.mempool_count += 1;
         };

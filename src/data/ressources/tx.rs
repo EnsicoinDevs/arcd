@@ -103,6 +103,14 @@ impl TransactionOutput {
     pub fn get_script(&self) -> &Script {
         &self.script
     }
+    pub fn get_data(&self, coinbase: bool, height: u32) -> crate::manager::UtxoData {
+        crate::manager::UtxoData {
+            script: self.script.clone(),
+            value: self.value,
+            coin_base: coinbase,
+            block_height: height,
+        }
+    }
 }
 
 impl Deserialize for TransactionOutput {
@@ -148,6 +156,15 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    pub fn get_data(
+        &self,
+        output_index: usize,
+        coinbase: bool,
+        height: u32,
+    ) -> crate::manager::UtxoData {
+        self.outputs[output_index].get_data(coinbase, height)
+    }
+
     pub fn get_outputs(&self) -> &Vec<TransactionOutput> {
         &self.outputs
     }

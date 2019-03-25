@@ -96,10 +96,10 @@ impl UtxoManager {
 
 #[derive(PartialEq, Eq)]
 pub struct UtxoData {
-    script: Script,
-    value: u64,
-    block_height: u32,
-    coin_base: bool,
+    pub script: Script,
+    pub value: u64,
+    pub block_height: u32,
+    pub coin_base: bool,
 }
 
 impl Serialize for UtxoData {
