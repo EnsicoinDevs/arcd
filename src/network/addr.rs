@@ -1,39 +1,13 @@
 use std::net::{IpAddr, SocketAddr};
 
-use ensicoin_serializer::Result as DeserResult;
-use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
+use ensicoin_serializer::{Deserialize, Serialize};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Address {
     pub timestamp: u64,
     pub address: SocketAddr,
-}
-
-impl Deserialize for Address {
-    fn deserialize(de: &mut Deserializer) -> DeserResult<Address> {
-        Ok(Address {
-            timestamp: match u64::deserialize(de) {
-                Ok(x) => x,
-                Err(e) => {
-                    return Err(ensicoin_serializer::Error::Message(format!(
-                        "In Address reading timestamp: {}",
-                        e
-                    )));
-                }
-            },
-            address: match SocketAddr::deserialize(de) {
-                Ok(x) => x,
-                Err(e) => {
-                    return Err(ensicoin_serializer::Error::Message(format!(
-                        "In Address reading address: {}",
-                        e
-                    )));
-                }
-            },
-        })
-    }
 }
 
 impl Address {

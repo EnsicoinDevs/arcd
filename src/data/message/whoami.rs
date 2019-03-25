@@ -1,9 +1,8 @@
 use super::{Message, MessageType};
 use crate::network::Address;
-use ensicoin_serializer::Result as DeserResult;
-use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
+use ensicoin_serializer::{Deserialize, Serialize};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Whoami {
     pub version: u32,
     pub address: Address,
@@ -29,45 +28,7 @@ impl Whoami {
     }
 }
 
-impl Deserialize for Whoami {
-    fn deserialize(de: &mut Deserializer) -> DeserResult<Whoami> {
-        let version = match u32::deserialize(de) {
-            Ok(x) => x,
-            Err(e) => {
-                return Err(ensicoin_serializer::Error::Message(format!(
-                    "In Whoami reading version: {}",
-                    e
-                )));
-            }
-        };
-        let address = match Address::deserialize(de) {
-            Ok(x) => x,
-            Err(e) => {
-                return Err(ensicoin_serializer::Error::Message(format!(
-                    "In Whoami reading address: {}",
-                    e
-                )));
-            }
-        };
-        let services: Vec<String> = match Vec::deserialize(de) {
-            Ok(x) => x,
-            Err(e) => {
-                return Err(ensicoin_serializer::Error::Message(format!(
-                    "In Whoami reading services: {}",
-                    e
-                )));
-            }
-        };
-
-        Ok(Whoami {
-            version,
-            address,
-            services,
-        })
-    }
-}
-
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct WhoamiAck {}
 
 impl WhoamiAck {

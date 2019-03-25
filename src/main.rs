@@ -1,3 +1,5 @@
+#![feature(box_syntax, test, fmt_internals)]
+
 mod cli;
 mod constants;
 mod data;
