@@ -6,18 +6,10 @@ use sha2::{Digest, Sha256};
 use super::script::Script;
 use crate::data::message::{Message, MessageType};
 
-#[derive(Hash, Eq, PartialEq, Clone)]
+#[derive(Hash, Eq, PartialEq, Clone, Serialize)]
 pub struct Outpoint {
     pub hash: Sha256Result,
     pub index: u32,
-}
-
-impl Serialize for Outpoint {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = self.hash.serialize();
-        v.append(&mut self.index.serialize());
-        v
-    }
 }
 
 impl Deserialize for Outpoint {
@@ -46,18 +38,10 @@ impl Deserialize for Outpoint {
     }
 }
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Serialize)]
 pub struct TransactionInput {
     pub previous_output: Outpoint,
     script: Script,
-}
-
-impl Serialize for TransactionInput {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = self.previous_output.serialize();
-        v.append(&mut self.script.serialize());
-        v
-    }
 }
 
 impl Deserialize for TransactionInput {
@@ -89,7 +73,7 @@ impl Deserialize for TransactionInput {
     }
 }
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Serialize)]
 pub struct TransactionOutput {
     value: u64,
     script: Script,
@@ -138,15 +122,7 @@ impl Deserialize for TransactionOutput {
     }
 }
 
-impl Serialize for TransactionOutput {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = self.value.serialize();
-        v.append(&mut self.script.serialize());
-        v
-    }
-}
-
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Serialize)]
 pub struct Transaction {
     version: u32,
     flags: Vec<String>,
@@ -185,16 +161,6 @@ impl Message for Transaction {
     }
     fn message_type() -> MessageType {
         MessageType::Transaction
-    }
-}
-
-impl Serialize for Transaction {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = self.version.serialize();
-        v.append(&mut self.flags.serialize());
-        v.append(&mut self.inputs.serialize());
-        v.append(&mut self.outputs.serialize());
-        v
     }
 }
 

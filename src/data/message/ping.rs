@@ -1,6 +1,7 @@
 use super::{Message, MessageType};
 use ensicoin_serializer::Serialize;
 
+#[derive(Serialize)]
 pub struct Ping {}
 
 impl Message for Ping {
@@ -12,18 +13,13 @@ impl Message for Ping {
     }
 }
 
-impl Serialize for Ping {
-    fn serialize(&self) -> Vec<u8> {
-        Vec::new()
-    }
-}
-
 impl Ping {
     pub fn new() -> Ping {
         Ping {}
     }
 }
 
+#[derive(Serialize)]
 pub struct Pong {}
 
 impl Message for Pong {
@@ -32,12 +28,6 @@ impl Message for Pong {
     }
     fn message_type() -> MessageType {
         MessageType::Pong
-    }
-}
-
-impl Serialize for Pong {
-    fn serialize(&self) -> Vec<u8> {
-        Vec::new()
     }
 }
 

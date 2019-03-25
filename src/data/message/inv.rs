@@ -5,6 +5,7 @@ use super::message::DataType;
 
 use crate::data::message::{Message, MessageType};
 
+#[derive(Serialize)]
 pub struct InvVect {
     data_type: super::message::DataType,
     hash: Sha256Result,
@@ -34,14 +35,7 @@ impl Deserialize for InvVect {
     }
 }
 
-impl Serialize for InvVect {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = self.data_type.serialize();
-        v.append(&mut self.hash.serialize());
-        v
-    }
-}
-
+#[derive(Serialize)]
 pub struct Inv {
     inventory: Vec<InvVect>,
 }
@@ -67,12 +61,7 @@ impl Deserialize for Inv {
     }
 }
 
-impl Serialize for Inv {
-    fn serialize(&self) -> Vec<u8> {
-        self.inventory.serialize()
-    }
-}
-
+#[derive(Serialize)]
 pub struct GetData {
     inventory: Vec<InvVect>,
 }
@@ -98,12 +87,7 @@ impl Deserialize for GetData {
     }
 }
 
-impl Serialize for GetData {
-    fn serialize(&self) -> Vec<u8> {
-        self.inventory.serialize()
-    }
-}
-
+#[derive(Serialize)]
 pub struct NotFound {
     inventory: Vec<InvVect>,
 }
@@ -126,11 +110,5 @@ impl Deserialize for NotFound {
                 e
             ))),
         }
-    }
-}
-
-impl Serialize for NotFound {
-    fn serialize(&self) -> Vec<u8> {
-        self.inventory.serialize()
     }
 }

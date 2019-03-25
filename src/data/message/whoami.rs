@@ -3,6 +3,7 @@ use crate::network::Address;
 use ensicoin_serializer::Result as DeserResult;
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 
+#[derive(Serialize)]
 pub struct Whoami {
     pub version: u32,
     pub address: Address,
@@ -25,16 +26,6 @@ impl Whoami {
             address: Address::new(),
             services: vec!["node".to_string()],
         }
-    }
-}
-
-impl Serialize for Whoami {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = Vec::new();
-        v.append(&mut self.version.serialize());
-        v.append(&mut self.address.serialize());
-        v.append(&mut self.services.serialize());
-        v
     }
 }
 
@@ -76,17 +67,12 @@ impl Deserialize for Whoami {
     }
 }
 
+#[derive(Serialize)]
 pub struct WhoamiAck {}
 
 impl WhoamiAck {
     pub fn new() -> WhoamiAck {
         WhoamiAck {}
-    }
-}
-
-impl Serialize for WhoamiAck {
-    fn serialize(&self) -> Vec<u8> {
-        Vec::new()
     }
 }
 

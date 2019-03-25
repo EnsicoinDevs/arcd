@@ -5,18 +5,10 @@ use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[derive(Serialize)]
 pub struct Address {
     pub timestamp: u64,
     pub address: SocketAddr,
-}
-
-impl Serialize for Address {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = Vec::new();
-        v.append(&mut self.timestamp.serialize());
-        v.append(&mut self.address.serialize());
-        v
-    }
 }
 
 impl Deserialize for Address {

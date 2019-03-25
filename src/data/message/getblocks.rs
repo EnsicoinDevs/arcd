@@ -3,6 +3,7 @@ use ensicoin_serializer::{Deserialize, Result, Serialize};
 
 use super::message::{Message, MessageType};
 
+#[derive(Serialize)]
 pub struct GetBlocks {
     block_locator: Vec<Sha256Result>,
     stop_hash: Sha256Result,
@@ -41,13 +42,5 @@ impl Deserialize for GetBlocks {
             block_locator,
             stop_hash,
         })
-    }
-}
-
-impl Serialize for GetBlocks {
-    fn serialize(&self) -> Vec<u8> {
-        let mut v = self.block_locator.serialize();
-        v.append(&mut self.stop_hash.serialize());
-        v
     }
 }
