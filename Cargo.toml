@@ -6,8 +6,11 @@ description = "A rust node implementing the ensicoin protocol"
 edition = "2018"
 
 [dependencies]
-ensicoin_serializer = "^1.0.0"
+futures = "^0.1"
+ensicoin_serializer = "^2.0.0"
 ensicoin_serializer_derive = "^0.2"
+tokio = "^0.1"
+tokio-timer = "^0.2"
 log = "^0.4"
 simplelog = "^0.5.0"
 clap = "^2.32.0"
@@ -21,7 +24,7 @@ generic-array = "^0.12.0"
 typenum = "^1.10.0"
 prost = "^0.5.0"
 bytes = "^0.4.12"
-
+tower-grpc = { git = "https://github.com/tower-rs/tower-grpc" }
 
 [build-dependencies]
-prost-build = { version = "0.5.0" }
+tower-grpc-build = { git = "https://github.com/tower-rs/tower-grpc" }
