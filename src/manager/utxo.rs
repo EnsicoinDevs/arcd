@@ -2,6 +2,8 @@ use crate::data::ressources::Script;
 use crate::data::Outpoint;
 use crate::data::Transaction;
 
+use bytes::{Bytes, BytesMut};
+
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
 pub enum Error {
@@ -43,15 +45,18 @@ impl UtxoManager {
         block_height: u32,
     ) -> Result<(), Error> {
         for (i, output) in tx.get_outputs().iter().enumerate() {
-            let mut data = output.get_script().serialize();
-            data.append(&mut output.get_value().serialize());
-            data.append(&mut block_height.serialize());
-            data.append(&mut (coin_base as u8).serialize());
+            let data = UtxoData {
+                script: output.get_script().clone(),
+                value: output.get_value().clone(),
+                block_height,
+                coin_base,
+            }
+            .serialize();
             let outpoint = Outpoint {
                 hash: Sha256Result::clone_from_slice(hash),
                 index: (i as u32),
             };
-            self.database.set(outpoint.serialize(), data)?;
+            self.database.set(outpoint.serialize(), data.to_vec())?;
         }
         Ok(())
     }
@@ -65,7 +70,7 @@ impl UtxoManager {
     pub fn get(&self, utxo: &Outpoint) -> Result<UtxoData, Error> {
         match self.database.get(utxo.serialize())? {
             Some(x) => {
-                let mut de = ensicoin_serializer::Deserializer::new(Vec::from(&*x));
+                let mut de = ensicoin_serializer::Deserializer::new(BytesMut::from(&*x));
                 Ok(UtxoData::deserialize(&mut de)?)
             }
             None => Err(Error::NoValueFound),
@@ -101,11 +106,11 @@ pub struct UtxoData {
 }
 
 impl Serialize for UtxoData {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Bytes {
         let mut v = self.script.serialize();
-        v.append(&mut self.value.serialize());
-        v.append(&mut self.block_height.serialize());
-        v.append(&mut (self.coin_base as u8).serialize());
+        v.extend_from_slice(&self.value.serialize());
+        v.extend_from_slice(&self.block_height.serialize());
+        v.extend_from_slice(&(self.coin_base as u8).serialize());
         v
     }
 }
