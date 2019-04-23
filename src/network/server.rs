@@ -46,6 +46,10 @@ impl futures::Future for Server {
 }
 
 fn new_socket_converter(socket: tokio::net::TcpStream) -> ConnectionMessage {
+    trace!(
+        "Connection picked up: {}",
+        socket.peer_addr().unwrap().to_string()
+    );
     ConnectionMessage::NewConnection(socket)
 }
 fn io_error_converter(e: std::io::Error) -> Error {
@@ -95,6 +99,7 @@ impl Server {
     }
 
     fn handle_message(&mut self, message: ConnectionMessage) {
+        trace!("Server handling: {}", message);
         match message {
             ConnectionMessage::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {

@@ -25,6 +25,7 @@ impl Decoder for MessageCodec {
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if !self.decoding_payload && buf.len() >= 24 {
+            trace!("Reading header");
             let header = buf.split_to(24);
             let mut de = Deserializer::new(header);
 
@@ -37,8 +38,14 @@ impl Decoder for MessageCodec {
             self.decoding_payload = true;
             self.message_type = message_type;
             self.payload_size = payload_length;
-            Ok(None)
-        } else if self.decoding_payload && buf.len() >= self.payload_size {
+            trace!(
+                "message: {} of size {} to read",
+                self.message_type,
+                self.payload_size
+            );
+        }
+        if self.decoding_payload && buf.len() >= self.payload_size {
+            trace!("Reading payload");
             self.decoding_payload = false;
             Ok(Some((
                 self.message_type.clone(),

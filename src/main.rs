@@ -35,8 +35,11 @@ extern crate secp256k1;
 extern crate sha2;
 extern crate typenum;
 
+use crate::data::message::Message;
 use std::io;
 use std::str::FromStr;
+
+extern crate cpuprofiler;
 
 fn main() {
     let matches = cli::build_cli().get_matches();
@@ -54,6 +57,9 @@ fn main() {
 
     let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
     std::fs::create_dir_all(&data_dir).unwrap();
+
+    let (_, v) = crate::data::message::Whoami::new().raw_bytes();
+    println!("{:?}", v.to_vec());
 
     match matches.subcommand() {
         ("completions", Some(sub_matches)) => {
