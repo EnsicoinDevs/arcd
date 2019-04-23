@@ -58,9 +58,6 @@ fn main() {
     let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
     std::fs::create_dir_all(&data_dir).unwrap();
 
-    let (_, v) = crate::data::message::Whoami::new().raw_bytes();
-    println!("{:?}", v.to_vec());
-
     match matches.subcommand() {
         ("completions", Some(sub_matches)) => {
             let shell = sub_matches.value_of("SHELL").unwrap();

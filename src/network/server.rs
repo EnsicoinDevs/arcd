@@ -23,6 +23,7 @@ pub struct Server {
     connection_receiver: FullMessageStream,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
+    connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
     utxo_manager: UtxoManager,
     mempool: Mempool,
     collection_count: u64,
@@ -40,6 +41,20 @@ impl futures::Future for Server {
                 Ok(Async::Ready(Some(msg))) => self.handle_message(msg),
                 Ok(Async::NotReady) => return Ok(Async::NotReady),
                 Err(e) => panic!("Server encountered an error: {}", e),
+            }
+            while !self.connection_buffer.is_empty() {
+                let (dest, msg) = self.connection_buffer.pop_front().unwrap();
+                match self.connections.get_mut(&dest).unwrap().start_send(msg) {
+                    Ok(AsyncSink::NotReady(msg)) => self.connection_buffer.push_front((dest, msg)),
+                    Err(e) => warn!("Can't concat [{}] connection: {}", dest, e),
+                    Ok(AsyncSink::Ready) => {
+                        match self.connections.get_mut(&dest).unwrap().poll_complete() {
+                            Ok(Async::Ready(_)) => (),
+                            Ok(Async::NotReady) => return Ok(Async::NotReady),
+                            Err(e) => warn!("Can't contact [{}] connection: {}", dest, e),
+                        }
+                    }
+                }
             }
         }
     }
@@ -93,6 +108,7 @@ impl Server {
             max_connections_count: max_conn,
             utxo_manager: UtxoManager::new(data_dir),
             mempool: Mempool::new(),
+            connection_buffer: std::collections::VecDeque::new(),
         };
         info!("Node started");
         server
