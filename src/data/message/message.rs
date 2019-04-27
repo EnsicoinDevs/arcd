@@ -21,7 +21,7 @@ impl MessageCodec {
 
 impl Decoder for MessageCodec {
     type Item = (MessageType, BytesMut);
-    type Error = crate::network::Error;
+    type Error = crate::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if !self.decoding_payload && buf.len() >= 24 {
@@ -31,7 +31,7 @@ impl Decoder for MessageCodec {
 
             let magic = u32::deserialize(&mut de).unwrap_or(0);
             if magic != crate::constants::MAGIC {
-                return Err(crate::network::Error::InvalidMagic(magic));
+                return Err(crate::Error::InvalidMagic(magic));
             };
             let message_type = MessageType::deserialize(&mut de).unwrap();
             let payload_length = u64::deserialize(&mut de).unwrap_or(0) as usize;
@@ -59,13 +59,9 @@ impl Decoder for MessageCodec {
 
 impl Encoder for MessageCodec {
     type Item = Bytes;
-    type Error = crate::network::Error;
+    type Error = crate::Error;
 
-    fn encode(
-        &mut self,
-        raw_message: Self::Item,
-        buf: &mut BytesMut,
-    ) -> Result<(), crate::network::Error> {
+    fn encode(&mut self, raw_message: Self::Item, buf: &mut BytesMut) -> Result<(), crate::Error> {
         buf.extend_from_slice(&raw_message);
         Ok(())
     }

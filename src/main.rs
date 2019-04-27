@@ -1,8 +1,10 @@
 mod cli;
 mod constants;
 mod data;
+mod error;
 mod manager;
 mod network;
+pub use error::Error;
 
 use network::Server;
 

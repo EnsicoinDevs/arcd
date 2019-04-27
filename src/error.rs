@@ -1,10 +1,10 @@
-use super::connection::State;
 use crate::constants::MAGIC;
+use crate::network::ConnectionState;
 
 #[derive(Debug)]
 pub enum Error {
     ParseError(ensicoin_serializer::Error),
-    InvalidState(State),
+    InvalidConnectionState(ConnectionState),
     InvalidMagic(u32),
     IoError(std::io::Error),
     ChannelError,
@@ -21,7 +21,9 @@ impl std::fmt::Display for Error {
             Error::TimerError(e) => write!(f, "Timer failed: {}", e),
             Error::NoResponse => write!(f, "No response to ping"),
             Error::ParseError(e) => write!(f, "Parse error: {}", e),
-            Error::InvalidState(st) => write!(f, "Connection is in invalid state: {}", st),
+            Error::InvalidConnectionState(st) => {
+                write!(f, "Connection is in invalid state: {}", st)
+            }
             Error::IoError(e) => write!(f, "IoError: {}", e),
             Error::InvalidMagic(n) => write!(f, "Invalid magic, got {} expected {}", n, MAGIC),
             Error::ChannelError => write!(f, "Server channel failed"),

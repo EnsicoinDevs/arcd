@@ -1,23 +1,13 @@
 use futures::sync::mpsc;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::prelude::*;
 
-use bytes::{Bytes, BytesMut};
-
-use crate::data::message::MessageType;
 use crate::data::ressources::LinkedTransaction;
 use crate::manager::{Mempool, UtxoManager};
-use crate::network::{Connection, ConnectionMessage, Error};
+use crate::network::{Connection, ConnectionMessage, ServerMessage};
+use crate::Error;
 
 const CHANNEL_CAPACITY: usize = 1_024;
-
-#[derive(Debug)]
-pub enum ServerMessage {
-    Tick,
-    Terminate(Error),
-    SendMessage(MessageType, Bytes),
-    HandleMessage(MessageType, BytesMut),
-}
 
 pub struct Server {
     connection_receiver: FullMessageStream,
