@@ -1,8 +1,9 @@
+use bytes::Bytes;
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 use ripemd160::{Digest, Ripemd160};
 use secp256k1::{Message, PublicKey, Secp256k1, Signature};
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, Clone, PartialEq, Eq)]
 pub enum OP {
     False,
     True,
@@ -16,7 +17,7 @@ pub enum OP {
 }
 
 impl Serialize for OP {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Bytes {
         let op_code: u8 = match self {
             OP::False => 0,
             OP::True => 80,
@@ -27,7 +28,7 @@ impl Serialize for OP {
             OP::Hash160 => 160,
             OP::Checksig => 170,
         };
-        vec![op_code]
+        Bytes::from(vec![op_code])
     }
 }
 
@@ -158,8 +159,18 @@ impl Script {
     }
 }
 
+impl Clone for Script {
+    fn clone(&self) -> Self {
+        Script {
+            code: self.code.clone(),
+            shash: self.shash.clone(),
+            stack: Vec::new(),
+        }
+    }
+}
+
 impl Serialize for Script {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Bytes {
         self.code.serialize()
     }
 }

@@ -1,5 +1,71 @@
-use crate::network;
+use bytes::{Bytes, BytesMut};
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
+
+use tokio::codec::{Decoder, Encoder};
+
+pub struct MessageCodec {
+    decoding_payload: bool,
+    message_type: MessageType,
+    payload_size: usize,
+}
+
+impl MessageCodec {
+    pub fn new() -> MessageCodec {
+        MessageCodec {
+            decoding_payload: false,
+            message_type: MessageType::Unknown(Vec::new()),
+            payload_size: 0,
+        }
+    }
+}
+
+impl Decoder for MessageCodec {
+    type Item = (MessageType, BytesMut);
+    type Error = crate::Error;
+
+    fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if !self.decoding_payload && buf.len() >= 24 {
+            trace!("Reading header");
+            let header = buf.split_to(24);
+            let mut de = Deserializer::new(header);
+
+            let magic = u32::deserialize(&mut de).unwrap_or(0);
+            if magic != crate::constants::MAGIC {
+                return Err(crate::Error::InvalidMagic(magic));
+            };
+            let message_type = MessageType::deserialize(&mut de).unwrap();
+            let payload_length = u64::deserialize(&mut de).unwrap_or(0) as usize;
+            self.decoding_payload = true;
+            self.message_type = message_type;
+            self.payload_size = payload_length;
+            trace!(
+                "message: {} of size {} to read",
+                self.message_type,
+                self.payload_size
+            );
+        }
+        if self.decoding_payload && buf.len() >= self.payload_size {
+            trace!("Reading payload");
+            self.decoding_payload = false;
+            Ok(Some((
+                self.message_type.clone(),
+                buf.split_to(self.payload_size),
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl Encoder for MessageCodec {
+    type Item = Bytes;
+    type Error = crate::Error;
+
+    fn encode(&mut self, raw_message: Self::Item, buf: &mut BytesMut) -> Result<(), crate::Error> {
+        buf.extend_from_slice(&raw_message);
+        Ok(())
+    }
+}
 
 pub enum DataType {
     Transaction,
@@ -7,7 +73,7 @@ pub enum DataType {
 }
 
 impl Serialize for DataType {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Bytes {
         match self {
             DataType::Block => (1 as u32).serialize(),
             DataType::Transaction => (0 as u32).serialize(),
@@ -34,7 +100,7 @@ impl Deserialize for DataType {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum MessageType {
     Whoami,
     WhoamiAck,
@@ -57,7 +123,7 @@ impl Deserialize for MessageType {
                     e
                 )));
             }
-            Ok(v) => v,
+            Ok(v) => v.to_vec(),
         };
         Ok(
             if raw_type == [119, 104, 111, 97, 109, 105, 0, 0, 0, 0, 0, 0] {
@@ -114,17 +180,17 @@ impl std::fmt::Display for MessageType {
 pub trait Message: Serialize {
     fn message_string() -> [u8; 12];
     fn message_type() -> MessageType;
-    fn raw_bytes(&self) -> Result<(MessageType, Vec<u8>), network::Error> {
+    fn raw_bytes(&self) -> (MessageType, Bytes) {
         let magic: u32 = 422021;
         let message_string = Self::message_string();
-        let mut payload = self.serialize();
+        let payload = self.serialize();
         let payload_length: u64 = payload.len() as u64;
 
-        let mut v = Vec::new();
-        v.append(&mut magic.serialize());
+        let mut v = Bytes::new();
+        v.extend_from_slice(&magic.serialize());
         v.extend_from_slice(&message_string);
-        v.append(&mut payload_length.serialize());
-        v.append(&mut payload);
-        Ok((Self::message_type(), v))
+        v.extend_from_slice(&payload_length.serialize());
+        v.extend_from_slice(&payload);
+        (Self::message_type(), v)
     }
 }

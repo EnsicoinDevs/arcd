@@ -1,29 +1,33 @@
-use super::connection::State;
 use crate::constants::MAGIC;
+use crate::network::ConnectionState;
 
 #[derive(Debug)]
 pub enum Error {
     ParseError(ensicoin_serializer::Error),
-    InvalidState(State),
+    InvalidConnectionState(ConnectionState),
     InvalidMagic(u32),
     IoError(std::io::Error),
-    ChannelReceiverError(std::sync::mpsc::RecvError),
     ChannelError,
     ServerTermination,
     NoResponse,
+    TimerError(tokio_timer::Error),
+    StreamError,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Error::StreamError => write!(f, "Tokio stream failed"),
+            Error::TimerError(e) => write!(f, "Timer failed: {}", e),
             Error::NoResponse => write!(f, "No response to ping"),
             Error::ParseError(e) => write!(f, "Parse error: {}", e),
-            Error::InvalidState(st) => write!(f, "Connection is in invalid state: {}", st),
+            Error::InvalidConnectionState(st) => {
+                write!(f, "Connection is in invalid state: {}", st)
+            }
             Error::IoError(e) => write!(f, "IoError: {}", e),
             Error::InvalidMagic(n) => write!(f, "Invalid magic, got {} expected {}", n, MAGIC),
             Error::ChannelError => write!(f, "Server channel failed"),
             Error::ServerTermination => write!(f, "Server terminated the connection"),
-            Error::ChannelReceiverError(e) => write!(f, "Receiving channel failed: {}", e),
         }
     }
 }
@@ -40,8 +44,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<std::sync::mpsc::RecvError> for Error {
-    fn from(error: std::sync::mpsc::RecvError) -> Self {
-        Error::ChannelReceiverError(error)
+impl From<tokio_timer::Error> for Error {
+    fn from(error: tokio_timer::Error) -> Self {
+        Error::TimerError(error)
     }
 }

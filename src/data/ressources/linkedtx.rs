@@ -18,18 +18,12 @@ pub enum DependencyType {
 }
 
 pub struct LinkedTransaction {
-    transaction: Transaction,
+    pub transaction: Transaction,
     input_count: usize,
     dependencies: HashMap<Outpoint, Dependency>,
     unknown_parent: HashSet<Outpoint>,
     dep_count: usize,
     mempool_count: usize,
-}
-
-impl std::hash::Hash for LinkedTransaction {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.transaction.hash(state);
-    }
 }
 
 impl PartialEq for LinkedTransaction {
@@ -65,6 +59,7 @@ impl LinkedTransaction {
     }
 
     pub fn add_dependency(&mut self, outpoint: Outpoint, dep: Dependency) {
+        self.unknown_parent.remove(&outpoint);
         if let DependencyType::Mempool = dep.dep_type {
             self.mempool_count += 1;
         };
