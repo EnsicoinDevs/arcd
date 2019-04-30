@@ -76,6 +76,9 @@ type ServerMessageErrored = futures::stream::MapErr<
 type FullMessageStream = futures::stream::Select<ServerMessageErrored, NewConnectionStreamErrored>;
 
 impl Server {
+    pub fn send_message(&self, msg: ConnectionMessage) {
+        self.connection_sender.clone().send(msg).wait();
+    }
     pub fn new(max_conn: u64, data_dir: &std::path::Path, port: u16) -> Server {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
@@ -131,6 +134,9 @@ impl Server {
             ConnectionMessage::CheckInv(_, _) => (),
             ConnectionMessage::Retrieve(_, _) => (),
             ConnectionMessage::SyncBlocks(_, _) => (),
+            ConnectionMessage::Connect(address) => {
+                Connection::initiate(&address, self.connection_sender.clone());
+            }
             ConnectionMessage::NewTransaction(tx) => {
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);

@@ -1,10 +1,11 @@
 mod cli;
-mod constants;
+mod commons;
 mod data;
-mod error;
 mod manager;
 mod network;
-pub use error::Error;
+pub use cli::daemoncli;
+pub use commons::constants;
+pub use commons::error::Error;
 
 use network::Server;
 
@@ -37,14 +38,13 @@ extern crate secp256k1;
 extern crate sha2;
 extern crate typenum;
 
-use crate::data::message::Message;
 use std::io;
 use std::str::FromStr;
 
 extern crate cpuprofiler;
 
 fn main() {
-    let matches = cli::build_cli().get_matches();
+    let matches = daemoncli::build_cli().get_matches();
 
     let log_level = if matches.is_present("verbose") {
         simplelog::LevelFilter::Trace
@@ -63,28 +63,10 @@ fn main() {
     match matches.subcommand() {
         ("completions", Some(sub_matches)) => {
             let shell = sub_matches.value_of("SHELL").unwrap();
-            cli::build_cli().gen_completions_to(
+            daemoncli::build_cli().gen_completions_to(
                 "another-rust-coin",
                 shell.parse().unwrap(),
                 &mut io::stdout(),
-            );
-        }
-        ("initiate", Some(sub_matches)) => {
-            let server = Server::new(
-                matches
-                    .value_of("max connections")
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                &data_dir,
-                listen_port,
-            );
-            let sender = server.get_sender();
-            tokio::run(server);
-            crate::network::Connection::initiate(
-                std::net::IpAddr::from_str(sub_matches.value_of("HOST_IP").unwrap()).unwrap(),
-                sub_matches.value_of("PORT").unwrap().parse().unwrap(),
-                sender,
             );
         }
         ("", _) => {

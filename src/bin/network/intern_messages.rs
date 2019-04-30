@@ -12,6 +12,7 @@ pub enum ConnectionMessage {
     Retrieve(crate::data::message::GetData, String),
     SyncBlocks(crate::data::message::GetBlocks, String),
     NewTransaction(crate::data::ressources::Transaction),
+    Connect(std::net::SocketAddr),
 }
 
 /// Messages Sent From the server
@@ -36,6 +37,7 @@ impl std::fmt::Display for ConnectionMessage {
                 ConnectionMessage::Retrieve(_, _) => "Retrieve",
                 ConnectionMessage::SyncBlocks(_, _) => "SyncBlocks",
                 ConnectionMessage::NewTransaction(_) => "NewTx",
+                ConnectionMessage::Connect(_) => "Connect",
             }
         )
     }

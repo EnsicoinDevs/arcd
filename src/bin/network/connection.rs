@@ -286,8 +286,8 @@ impl Connection {
         }
     }
 
-    pub fn initiate(address: std::net::IpAddr, port: u16, sender: ConnectionSender) {
-        tokio::net::TcpStream::connect(&std::net::SocketAddr::new(address, port))
+    pub fn initiate(address: &std::net::SocketAddr, sender: ConnectionSender) {
+        tokio::net::TcpStream::connect(address)
             .map_err(|_| ())
             .and_then(|stream| {
                 let remote = stream.peer_addr().unwrap().to_string();

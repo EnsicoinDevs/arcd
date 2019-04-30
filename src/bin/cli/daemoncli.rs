@@ -82,20 +82,4 @@ pub fn build_cli() -> App<'static, 'static> {
                         .help("The shell to generate the script for"),
                 ),
         )
-        .subcommand(
-            SubCommand::with_name("initiate")
-                .about("initiate a connection with a host and listens")
-                .arg(
-                    Arg::with_name("HOST_IP")
-                        .help("The ip of the remote host")
-                        .default_value(IP)
-                        .validator(is_ip),
-                )
-                .arg(
-                    Arg::with_name("PORT")
-                        .help("Remote port")
-                        .default_value(DEFAULT_PORT)
-                        .validator(is_port),
-                ),
-        )
 }
