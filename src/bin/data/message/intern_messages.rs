@@ -2,6 +2,7 @@ use crate::data::message::MessageType;
 use crate::Error;
 use bytes::{Bytes, BytesMut};
 use futures::sync::mpsc;
+use tokio::codec::{Decoder, Encoder};
 
 /// Messages sent to the server by the connections for example
 pub enum ConnectionMessage {
@@ -43,4 +44,11 @@ impl std::fmt::Display for ConnectionMessage {
             }
         )
     }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+pub enum PromptMessage {
+    Connect(std::net::SocketAddr),
+    Transaction(crate::data::ressources::Transaction),
+    Disconnect,
 }

@@ -6,7 +6,7 @@ mod ping;
 mod whoami;
 
 pub use getblocks::GetBlocks;
-pub use intern_messages::{ConnectionMessage, ServerMessage};
+pub use intern_messages::{ConnectionMessage, PromptMessage, ServerMessage};
 pub use inv::{GetData, Inv, InvVect, NotFound};
 pub use message::Message;
 pub use message::MessageCodec;

@@ -11,6 +11,9 @@ use network::Server;
 
 extern crate bytes;
 
+extern crate serde;
+extern crate tokio_serde_json;
+
 extern crate futures;
 extern crate tokio;
 extern crate tokio_timer;

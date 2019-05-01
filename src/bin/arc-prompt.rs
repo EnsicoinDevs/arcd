@@ -1,6 +1,7 @@
 mod constants;
 mod data;
 mod error;
+use crate::data::message::PromptMessage;
 pub use error::Error;
 
 extern crate ensicoin_serializer;
@@ -12,7 +13,10 @@ extern crate log;
 #[macro_use]
 extern crate lazy_static;
 
+extern crate serde_json;
+
 use std::borrow::Cow;
+use std::io::prelude::*;
 
 use rustyline::completion::Completer;
 use rustyline::config::OutputStreamType;
@@ -88,7 +92,20 @@ impl Highlighter for MyHelper {
 
 impl Helper for MyHelper {}
 
+fn send_message(socket: &mut std::net::TcpStream, message: crate::data::message::PromptMessage) {
+    let serialized = serde_json::to_vec(&message).expect("Could not serialize message");
+    let len = serialized.len() as u32;
+    socket
+        .write(&len.to_be_bytes())
+        .expect("Error sending message");
+    socket.write(&serialized).expect("Error sending message");
+}
+
 fn main() {
+    let mut socket =
+        std::net::TcpStream::connect(format!("127.0.0.1:{}", constants::DEFAULT_PROMPT))
+            .expect("Can't connect to daemon");
+
     let config = Config::builder()
         .history_ignore_space(true)
         .completion_type(CompletionType::List)
@@ -104,8 +121,24 @@ fn main() {
             Ok(line) => {
                 rl.add_history_entry(line.as_ref());
                 let trim_line = line.trim();
+                if line.starts_with("Connect") {
+                    let v: Vec<&str> = line.split(' ').collect();
+                    if v.len() != 2 {
+                        eprintln!("Expected 1 argument, got {}", v.len() - 1);
+                        continue;
+                    }
+                    let address: std::net::SocketAddr = match v[1].parse() {
+                        Err(e) => {
+                            eprintln!("Invalid address: {}", e);
+                            continue;
+                        }
+                        Ok(a) => a,
+                    };
+                    send_message(&mut socket, PromptMessage::Connect(address));
+                }
                 if trim_line == "Exit" || trim_line == "exit" {
                     println!("Bye !");
+                    send_message(&mut socket, PromptMessage::Disconnect);
                     break;
                 }
                 if trim_line == "Help" || trim_line == "help" {
