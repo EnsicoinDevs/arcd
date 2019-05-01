@@ -2,9 +2,10 @@ use futures::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 
+use crate::data::message::{ConnectionMessage, ServerMessage};
 use crate::data::ressources::LinkedTransaction;
 use crate::manager::{Mempool, UtxoManager};
-use crate::network::{Connection, ConnectionMessage, ServerMessage};
+use crate::network::Connection;
 use crate::Error;
 
 const CHANNEL_CAPACITY: usize = 1_024;

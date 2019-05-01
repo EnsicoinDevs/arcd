@@ -1,5 +1,5 @@
 use super::{Message, MessageType};
-use crate::network::Address;
+use crate::data::ressources::Address;
 use ensicoin_serializer::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

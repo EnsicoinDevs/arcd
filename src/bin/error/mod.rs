@@ -1,10 +1,9 @@
 use crate::constants::MAGIC;
-use crate::network::ConnectionState;
 
 #[derive(Debug)]
 pub enum Error {
     ParseError(ensicoin_serializer::Error),
-    InvalidConnectionState(ConnectionState),
+    InvalidConnectionState(String),
     InvalidMagic(u32),
     IoError(std::io::Error),
     ChannelError,

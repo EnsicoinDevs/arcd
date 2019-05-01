@@ -1,11 +1,11 @@
 mod cli;
-mod commons;
+mod constants;
 mod data;
+mod error;
 mod manager;
 mod network;
 pub use cli::daemoncli;
-pub use commons::constants;
-pub use commons::error::Error;
+pub use error::Error;
 
 use network::Server;
 
@@ -40,8 +40,6 @@ extern crate typenum;
 
 use std::io;
 use std::str::FromStr;
-
-extern crate cpuprofiler;
 
 fn main() {
     let matches = daemoncli::build_cli().get_matches();

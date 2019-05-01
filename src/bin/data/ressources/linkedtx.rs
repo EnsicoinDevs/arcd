@@ -1,6 +1,6 @@
 use super::tx::Outpoint;
 use super::tx::Transaction;
-use crate::manager::UtxoData;
+use super::tx::UtxoData;
 use std::collections::HashMap;
 use std::collections::HashSet;
 

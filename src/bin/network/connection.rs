@@ -6,9 +6,9 @@ use ensicoin_serializer::{Deserialize, Deserializer};
 
 use bytes::{Bytes, BytesMut};
 
-use super::{ConnectionMessage, ServerMessage};
 use crate::data::message;
 use crate::data::message::MessageCodec;
+use crate::data::message::{ConnectionMessage, ServerMessage};
 use crate::data::message::{Message, MessageType, Ping, Whoami, WhoamiAck};
 use crate::Error;
 
@@ -308,7 +308,7 @@ impl Connection {
             self.message_buffer.push_back((t, v));
             Ok(())
         } else {
-            Err(Error::InvalidConnectionState(self.state.clone()))
+            Err(Error::InvalidConnectionState(format!("{}", self.state)))
         }
     }
 
