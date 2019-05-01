@@ -287,15 +287,19 @@ impl Connection {
     }
 
     pub fn initiate(address: &std::net::SocketAddr, sender: ConnectionSender) {
-        tokio::net::TcpStream::connect(address)
-            .map_err(|_| ())
-            .and_then(|stream| {
-                let remote = stream.peer_addr().unwrap().to_string();
-                info!("connected to [{}]", remote);
-                tokio::spawn(Connection::new(stream, sender))
-            })
-            .wait()
-            .unwrap();
+        tokio::spawn(
+            tokio::net::TcpStream::connect(address)
+                .map_err(|_| ())
+                .and_then(|stream| {
+                    let remote = stream.peer_addr().unwrap().to_string();
+                    info!("connected to [{}]", remote);
+                    let mut conn = Connection::new(stream, sender);
+                    let (t, v) = Whoami::new().raw_bytes();
+                    conn.state = State::Initiated;
+                    conn.buffer_message(t, v).unwrap();
+                    conn
+                }),
+        );
     }
 
     pub fn remote(&self) -> &str {

@@ -171,10 +171,11 @@ impl Server {
                 );
                 let deserialized: tokio_serde_json::ReadJson<_, PromptMessage> =
                     tokio_serde_json::ReadJson::new(length_delimited);
-                let sender = self.connection_sender.clone();
+                let senders = futures::stream::repeat(self.connection_sender.clone());
                 let deserialized_handled = deserialized
                     .map_err(|e| println!("Error in prompt: {:?}", e))
-                    .for_each(|message| {
+                    .zip(senders)
+                    .for_each(|(message, sender)| {
                         match message {
                             PromptMessage::Connect(addr) => {
                                 tokio::spawn(
