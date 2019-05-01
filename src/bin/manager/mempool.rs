@@ -1,5 +1,5 @@
 use crate::constants::Sha256Result;
-use crate::data::ressources::{LinkedTransaction, Outpoint, Dependency, DependencyType};
+use crate::data::ressources::{Dependency, DependencyType, LinkedTransaction, Outpoint};
 use std::collections::HashMap;
 
 type Dep = (Sha256Result, Outpoint);
@@ -24,15 +24,25 @@ impl Mempool {
     fn added_parent_to_pool(&mut self, hash_tx: Sha256Result) {
         if let Some(dependencies) = self.dependencies.get(&hash_tx).cloned() {
             for (orphan_hash, outpoint) in dependencies {
-                self.orphan.get_mut(&orphan_hash).unwrap().add_dependency(outpoint.clone(), Dependency {
-                    dep_type: DependencyType::Mempool,
-                    data: self.pool.get(&hash_tx).unwrap().transaction.get_data(outpoint.index as usize, false, 0)
-                });
+                self.orphan.get_mut(&orphan_hash).unwrap().add_dependency(
+                    outpoint.clone(),
+                    Dependency {
+                        dep_type: DependencyType::Mempool,
+                        data: self.pool.get(&hash_tx).unwrap().transaction.get_data(
+                            outpoint.index as usize,
+                            false,
+                            0,
+                        ),
+                    },
+                );
                 if self.orphan.get(&orphan_hash).unwrap().is_complete() {
-                    self.pool.insert(orphan_hash.clone(), self.orphan.remove(&orphan_hash).unwrap());
+                    self.pool.insert(
+                        orphan_hash.clone(),
+                        self.orphan.remove(&orphan_hash).unwrap(),
+                    );
                     self.added_parent_to_pool(orphan_hash.clone());
                 }
-            } 
+            }
         }
     }
 

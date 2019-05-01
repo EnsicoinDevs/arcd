@@ -3,7 +3,7 @@ use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 use ripemd160::{Digest, Ripemd160};
 use secp256k1::{Message, PublicKey, Secp256k1, Signature};
 
-#[derive(Hash, Clone, PartialEq, Eq)]
+#[derive(Hash, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OP {
     False,
     True,
@@ -54,10 +54,12 @@ impl Deserialize for OP {
     }
 }
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Script {
     code: Vec<OP>,
+    #[serde(skip_serializing)]
     stack: Vec<Vec<u8>>,
+    #[serde(skip_serializing)]
     shash: Vec<u8>,
 }
 

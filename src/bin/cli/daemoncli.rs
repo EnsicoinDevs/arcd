@@ -1,4 +1,4 @@
-use crate::constants::{DEFAULT_PORT, IP};
+use crate::constants::{DEFAULT_PORT, DEFAULT_PROMPT, IP};
 use clap::{App, Arg, SubCommand};
 
 fn is_port(v: String) -> Result<(), String> {
@@ -56,6 +56,13 @@ pub fn build_cli() -> App<'static, 'static> {
                 .help("Set the listening port")
                 .default_value(DEFAULT_PORT)
                 .validator(is_port),
+        )
+        .arg(
+            Arg::with_name("prompt_port")
+                .long("prompt")
+                .default_value(DEFAULT_PROMPT)
+                .validator(is_port)
+                .help("Port to connect the prompt to"),
         )
         .arg(
             Arg::with_name("max connections")

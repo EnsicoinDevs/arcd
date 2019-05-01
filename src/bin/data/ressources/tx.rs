@@ -74,19 +74,21 @@ impl Deserialize for UtxoData {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(
+    Hash, Eq, PartialEq, Clone, Serialize, Deserialize, serde::Serialize, serde::Deserialize,
+)]
 pub struct Outpoint {
     pub hash: Sha256Result,
     pub index: u32,
 }
 
-#[derive(Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 pub struct TransactionInput {
     pub previous_output: Outpoint,
     script: Script,
 }
 
-#[derive(Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 pub struct TransactionOutput {
     value: u64,
     script: Script,
@@ -109,7 +111,7 @@ impl TransactionOutput {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
 pub struct Transaction {
     version: u32,
     flags: Vec<String>,

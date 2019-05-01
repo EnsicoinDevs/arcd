@@ -11,7 +11,7 @@ use crate::Error;
 const CHANNEL_CAPACITY: usize = 1_024;
 
 pub struct Server {
-    connection_receiver: FullMessageStream,
+    connection_receiver: FullMessageStreamWithPrompt,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
@@ -51,6 +51,11 @@ impl futures::Future for Server {
     }
 }
 
+fn new_prompt_stream(socket: tokio::net::TcpStream) -> ConnectionMessage {
+    trace!("Prompt connection");
+    ConnectionMessage::NewPrompt(socket)
+}
+
 fn new_socket_converter(socket: tokio::net::TcpStream) -> ConnectionMessage {
     trace!(
         "Connection picked up: {}",
@@ -75,12 +80,11 @@ type ServerMessageErrored = futures::stream::MapErr<
     ChannelErrorConverter,
 >;
 type FullMessageStream = futures::stream::Select<ServerMessageErrored, NewConnectionStreamErrored>;
+type FullMessageStreamWithPrompt =
+    futures::stream::Select<FullMessageStream, NewConnectionStreamErrored>;
 
 impl Server {
-    pub fn send_message(&self, msg: ConnectionMessage) {
-        self.connection_sender.clone().send(msg).wait();
-    }
-    pub fn new(max_conn: u64, data_dir: &std::path::Path, port: u16) -> Server {
+    pub fn new(max_conn: u64, data_dir: &std::path::Path, port: u16, prompt_port: u16) -> Server {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
         let listener =
@@ -93,6 +97,16 @@ impl Server {
         let message_stream = receiver
             .map_err(channel_errore_converter as ChannelErrorConverter)
             .select(inbound_connection_stream);
+        let prompt_listener = TcpListener::bind(&std::net::SocketAddr::new(
+            "127.0.0.1".parse().unwrap(),
+            prompt_port,
+        ))
+        .unwrap();
+        let prompt_stream = prompt_listener
+            .incoming()
+            .map(new_prompt_stream as NewSocketConverter)
+            .map_err(io_error_converter as IoErrorConverter);
+        let message_stream = message_stream.select(prompt_stream);
 
         let server = Server {
             connections: std::collections::HashMap::new(),
@@ -148,6 +162,9 @@ impl Server {
                 let new_conn = Connection::new(socket, self.connection_sender.clone());
                 trace!("new connection");
                 tokio::spawn(new_conn);
+            }
+            ConnectionMessage::NewPrompt(socket) => {
+                // TODO: How to handle prompts
             }
         }
     }
