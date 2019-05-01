@@ -27,7 +27,12 @@ static PROMPT: &'static str = ">> ";
 struct MyHelper(MatchingBracketHighlighter, HistoryHinter);
 
 lazy_static! {
-    static ref MESSAGES: Vec<String> = vec!["Connect".to_string(), "NewTransaction".to_string()];
+    static ref MESSAGES: Vec<String> = vec![
+        "Connect".to_string(),
+        "NewTransaction".to_string(),
+        "Help".to_string(),
+        "Exit".to_string()
+    ];
 }
 
 impl Completer for MyHelper {
@@ -43,6 +48,10 @@ impl Completer for MyHelper {
             (0, vec!["Connect".to_string()])
         } else if line.starts_with('N') {
             (0, vec!["NewTransaction".to_string()])
+        } else if line.starts_with(|c: char| c.to_ascii_lowercase() == 'h') {
+            (0, vec!["Help".to_string()])
+        } else if line.starts_with(|c: char| c.to_ascii_lowercase() == 'e') {
+            (0, vec!["Exit".to_string()])
         } else {
             (0, MESSAGES.to_vec())
         })
@@ -94,10 +103,24 @@ fn main() {
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_ref());
-                println!("Line: {}", line)
+                let trim_line = line.trim();
+                if trim_line == "Exit" || trim_line == "exit" {
+                    println!("Bye !");
+                    break;
+                }
+                if trim_line == "Help" || trim_line == "help" {
+                    println!("Commands :");
+                    println!("\tHelp: prints this help");
+                    println!("\tExit: closes the prompt");
+                    println!("\tConnect address:port: Creates a connection to the specified node");
+                    println!("\tNewTransaction {{json}}: Registers a Transaction (as json)");
+                } else {
+                    eprintln!("Invalid command: {}", line);
+                }
             }
             Err(ReadlineError::Interrupted) => println!("CTRL-C"),
             Err(ReadlineError::Eof) => {
+                println!("Bye !");
                 break;
             }
             Err(e) => {
