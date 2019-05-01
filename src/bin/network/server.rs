@@ -2,7 +2,7 @@ use futures::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 
-use crate::data::message::{ConnectionMessage, ServerMessage};
+use crate::data::message::{ConnectionMessage, PromptMessage, ServerMessage};
 use crate::data::ressources::LinkedTransaction;
 use crate::manager::{Mempool, UtxoManager};
 use crate::network::Connection;
@@ -165,6 +165,31 @@ impl Server {
             }
             ConnectionMessage::NewPrompt(socket) => {
                 // TODO: How to handle prompts
+                let length_delimited = tokio::codec::FramedRead::new(
+                    socket,
+                    tokio::codec::LengthDelimitedCodec::new(),
+                );
+                let deserialized: tokio_serde_json::ReadJson<_, PromptMessage> =
+                    tokio_serde_json::ReadJson::new(length_delimited);
+                let sender = self.connection_sender.clone();
+                let deserialized_handled = deserialized
+                    .map_err(|e| println!("Error in prompt: {:?}", e))
+                    .for_each(|message| {
+                        match message {
+                            PromptMessage::Connect(addr) => {
+                                tokio::spawn(
+                                    sender
+                                        .clone()
+                                        .send(ConnectionMessage::Connect(addr))
+                                        .map_err(|_| ())
+                                        .map(|_| ()),
+                                );
+                            }
+                            m => println!("message: {}", serde_json::to_string_pretty(&m).unwrap()),
+                        };
+                        Ok(())
+                    });
+                tokio::spawn(deserialized_handled);
             }
         }
     }

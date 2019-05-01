@@ -103,8 +103,13 @@ fn send_message(socket: &mut std::net::TcpStream, message: crate::data::message:
 
 fn main() {
     let mut socket =
-        std::net::TcpStream::connect(format!("127.0.0.1:{}", constants::DEFAULT_PROMPT))
-            .expect("Can't connect to daemon");
+        match std::net::TcpStream::connect(format!("127.0.0.1:{}", constants::DEFAULT_PROMPT)) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Can't connect to daemon: {}", e);
+                return;
+            }
+        };
 
     let config = Config::builder()
         .history_ignore_space(true)
@@ -135,24 +140,23 @@ fn main() {
                         Ok(a) => a,
                     };
                     send_message(&mut socket, PromptMessage::Connect(address));
-                }
-                if trim_line == "Exit" || trim_line == "exit" {
+                } else if trim_line == "Exit" || trim_line == "exit" {
                     println!("Bye !");
                     send_message(&mut socket, PromptMessage::Disconnect);
                     break;
-                }
-                if trim_line == "Help" || trim_line == "help" {
+                } else if trim_line == "Help" || trim_line == "help" {
                     println!("Commands :");
                     println!("\tHelp: prints this help");
                     println!("\tExit: closes the prompt");
                     println!("\tConnect address:port: Creates a connection to the specified node");
-                    println!("\tNewTransaction {{json}}: Registers a Transaction (as json)");
+                    println!("\tTransaction {{json}}: Registers a Transaction (as json)");
                 } else {
                     eprintln!("Invalid command: {}", line);
                 }
             }
             Err(ReadlineError::Interrupted) => println!("CTRL-C"),
             Err(ReadlineError::Eof) => {
+                send_message(&mut socket, PromptMessage::Disconnect);
                 println!("Bye !");
                 break;
             }
