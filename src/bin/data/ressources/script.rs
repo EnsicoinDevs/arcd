@@ -80,8 +80,9 @@ impl Script {
                 OP::False => self.stack.push(vec![0]),
                 OP::True => self.stack.push(vec![1]),
                 OP::Dup => {
-                    match self.stack.last() {
-                        Some(e) => self.stack.push(e.clone()),
+                    let end = self.stack.last().cloned();
+                    match end {
+                        Some(e) => self.stack.push(e),
                         None => return false,
                     };
                 }
