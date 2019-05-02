@@ -186,7 +186,10 @@ impl Server {
                                         .map(|_| ()),
                                 );
                             }
-                            m => println!("message: {}", serde_json::to_string_pretty(&m).unwrap()),
+                            m => trace!(
+                                "prompt message: {}",
+                                serde_json::to_string_pretty(&m).unwrap()
+                            ),
                         };
                         Ok(())
                     });
