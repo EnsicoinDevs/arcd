@@ -108,6 +108,7 @@ pub enum MessageType {
     GetData,
     NotFound,
     GetBlocks,
+    Block,
     Transaction,
     Ping,
     Pong,
@@ -144,6 +145,8 @@ impl Deserialize for MessageType {
                 MessageType::GetBlocks
             } else if raw_type == [116, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] {
                 MessageType::Transaction
+            } else if raw_type == [98, 108, 111, 99, 107, 0, 0, 0, 0, 0, 0, 0] {
+                MessageType::Block
             } else {
                 MessageType::Unknown(raw_type)
             },
@@ -166,6 +169,7 @@ impl std::fmt::Display for MessageType {
                 MessageType::NotFound => "NotFound".to_string(),
                 MessageType::GetBlocks => "GetBlocks".to_string(),
                 MessageType::Transaction => "Transaction".to_string(),
+                MessageType::Block => "Block".to_string(),
                 MessageType::Unknown(s) => format!(
                     "Unknown: {}",
                     String::from_utf8(s.clone()).unwrap_or("<INVALID UTF8>".to_string())

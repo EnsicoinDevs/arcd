@@ -374,6 +374,7 @@ impl Connection {
                 ));
             }
             MessageType::NotFound => (),
+            MessageType::Block => (),
             MessageType::GetBlocks => {}
             MessageType::Transaction => {
                 self.server_buffer

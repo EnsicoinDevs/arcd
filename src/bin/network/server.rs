@@ -4,7 +4,7 @@ use tokio::prelude::*;
 
 use crate::data::message::{ConnectionMessage, PromptMessage, ServerMessage};
 use crate::data::ressources::LinkedTransaction;
-use crate::manager::{Mempool, UtxoManager};
+use crate::manager::{Blockchain, Mempool, UtxoManager};
 use crate::network::Connection;
 use crate::Error;
 
@@ -16,6 +16,7 @@ pub struct Server {
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
     utxo_manager: UtxoManager,
+    blockchain: Blockchain,
     mempool: Mempool,
     collection_count: u64,
     max_connections_count: u64,
@@ -115,6 +116,7 @@ impl Server {
             collection_count: 0,
             max_connections_count: max_conn,
             utxo_manager: UtxoManager::new(data_dir),
+            blockchain: Blockchain::new(data_dir),
             mempool: Mempool::new(),
             connection_buffer: std::collections::VecDeque::new(),
         };
