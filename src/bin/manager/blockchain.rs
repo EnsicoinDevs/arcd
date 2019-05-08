@@ -1,4 +1,4 @@
-use crate::data::ressources::Block;
+use ensicoin_messages::resource::Block;
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
 pub struct Blockchain {
@@ -34,7 +34,8 @@ impl Blockchain {
     pub fn add_block(&mut self, block: &Block) -> Result<(), sled::Error<()>> {
         let raw_block = block.serialize().to_vec();
         let hash = block.double_hash();
-        let utxo = block.utxo().serialize().to_vec();
+        //let utxo = block.utxo().serialize().to_vec();
+        let utxo = Vec::new();
         self.database.set(hash, raw_block.clone())?;
         self.reverse_chain.set(block.header.prev_block, raw_block)?;
         self.utxo.set(hash, utxo)?;

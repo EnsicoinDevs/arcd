@@ -1,5 +1,8 @@
-pub mod message;
-pub mod ressources;
+mod codec;
+pub mod intern_messages;
+pub mod linkedtx;
+pub mod script_vm;
+mod utxo;
 
-pub use ressources::Outpoint;
-pub use ressources::Transaction;
+pub use codec::MessageCodec;
+pub use utxo::UtxoData;

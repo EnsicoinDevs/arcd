@@ -34,6 +34,7 @@ extern crate sled;
 extern crate ensicoin_serializer;
 #[macro_use]
 extern crate ensicoin_serializer_derive;
+extern crate ensicoin_messages;
 
 extern crate generic_array;
 extern crate ripemd160;
@@ -42,7 +43,6 @@ extern crate sha2;
 extern crate typenum;
 
 use std::io;
-use std::str::FromStr;
 
 fn main() {
     let matches = daemoncli::build_cli().get_matches();

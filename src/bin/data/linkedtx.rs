@@ -1,6 +1,6 @@
-use super::tx::Outpoint;
-use super::tx::Transaction;
-use super::tx::UtxoData;
+use crate::data::UtxoData;
+use ensicoin_messages::resource::Outpoint;
+use ensicoin_messages::resource::Transaction;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -49,7 +49,7 @@ impl LinkedTransaction {
     }
 
     fn init_parents(&mut self) {
-        for input in self.transaction.get_inputs() {
+        for input in self.transaction.inputs.iter() {
             self.unknown_parent.insert(input.previous_output.clone());
         }
     }

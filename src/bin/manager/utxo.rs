@@ -1,8 +1,6 @@
-use crate::data::ressources::Script;
-use crate::data::ressources::UtxoData;
-use crate::data::Outpoint;
-use crate::data::Transaction;
+use crate::data::UtxoData;
 use bytes::BytesMut;
+use ensicoin_messages::resource::{Outpoint, Transaction};
 
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
@@ -44,10 +42,10 @@ impl UtxoManager {
         coin_base: bool,
         block_height: u32,
     ) -> Result<(), Error> {
-        for (i, output) in tx.get_outputs().iter().enumerate() {
+        for (i, output) in tx.outputs.iter().enumerate() {
             let data = UtxoData {
-                script: output.get_script().clone(),
-                value: output.get_value().clone(),
+                script: output.script.clone(),
+                value: output.value.clone(),
                 block_height,
                 coin_base,
             }
@@ -82,14 +80,14 @@ impl UtxoManager {
         Ok(())
     }
 
-    pub fn link(&self, linkedtx: &mut crate::data::ressources::LinkedTransaction) {
+    pub fn link(&self, linkedtx: &mut crate::data::linkedtx::LinkedTransaction) {
         for parent in linkedtx.unknown().clone() {
             if let Ok(utxo) = self.get(&parent) {
                 linkedtx.add_dependency(
                     parent.clone(),
-                    crate::data::ressources::Dependency {
+                    crate::data::linkedtx::Dependency {
                         data: utxo,
-                        dep_type: crate::data::ressources::DependencyType::Block,
+                        dep_type: crate::data::linkedtx::DependencyType::Block,
                     },
                 );
             }

@@ -1,5 +1,7 @@
 use crate::constants::Sha256Result;
-use crate::data::ressources::{Dependency, DependencyType, LinkedTransaction, Outpoint};
+use crate::data::linkedtx::{Dependency, DependencyType, LinkedTransaction};
+use crate::data::UtxoData;
+use ensicoin_messages::resource::Outpoint;
 use std::collections::HashMap;
 
 type Dep = (Sha256Result, Outpoint);
@@ -28,8 +30,9 @@ impl Mempool {
                     outpoint.clone(),
                     Dependency {
                         dep_type: DependencyType::Mempool,
-                        data: self.pool.get(&hash_tx).unwrap().transaction.get_data(
-                            outpoint.index as usize,
+                        data: UtxoData::from_output(
+                            &self.pool.get(&hash_tx).unwrap().transaction.outputs
+                                [outpoint.index as usize],
                             false,
                             0,
                         ),
@@ -50,14 +53,15 @@ impl Mempool {
         for parent in linked_tx.unknown().clone() {
             match self.pool.get(&parent.hash) {
                 Some(parent_tx) => {
-                    let parent_data =
-                        parent_tx
-                            .transaction
-                            .get_data(parent.index as usize, false, 0);
+                    let parent_data = UtxoData::from_output(
+                        &parent_tx.transaction.outputs[parent.index as usize],
+                        false,
+                        0,
+                    );
                     linked_tx.add_dependency(
                         parent,
-                        crate::data::ressources::Dependency {
-                            dep_type: crate::data::ressources::DependencyType::Mempool,
+                        crate::data::linkedtx::Dependency {
+                            dep_type: crate::data::linkedtx::DependencyType::Mempool,
                             data: parent_data,
                         },
                     );

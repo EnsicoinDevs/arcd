@@ -2,8 +2,8 @@ use futures::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 
-use crate::data::message::{ConnectionMessage, PromptMessage, ServerMessage};
-use crate::data::ressources::LinkedTransaction;
+use crate::data::intern_messages::{ConnectionMessage, PromptMessage, ServerMessage};
+use crate::data::linkedtx::LinkedTransaction;
 use crate::manager::{Blockchain, Mempool, UtxoManager};
 use crate::network::Connection;
 use crate::Error;

@@ -1,9 +1,10 @@
 mod constants;
 mod data;
 mod error;
-use crate::data::message::PromptMessage;
+use crate::data::intern_messages::PromptMessage;
 pub use error::Error;
 
+extern crate ensicoin_messages;
 extern crate ensicoin_serializer;
 extern crate rustyline;
 #[macro_use]
@@ -33,7 +34,7 @@ struct MyHelper(MatchingBracketHighlighter, HistoryHinter);
 lazy_static! {
     static ref MESSAGES: Vec<String> = vec![
         "Connect".to_string(),
-        "NewTransaction".to_string(),
+        "Transaction".to_string(),
         "Help".to_string(),
         "Exit".to_string()
     ];
@@ -48,17 +49,19 @@ impl Completer for MyHelper {
         _pos: usize,
         _ctx: &Context<'_>,
     ) -> Result<(usize, Vec<String>), ReadlineError> {
-        Ok(if line.starts_with('C') {
-            (0, vec!["Connect".to_string()])
-        } else if line.starts_with('N') {
-            (0, vec!["NewTransaction".to_string()])
-        } else if line.starts_with(|c: char| c.to_ascii_lowercase() == 'h') {
-            (0, vec!["Help".to_string()])
-        } else if line.starts_with(|c: char| c.to_ascii_lowercase() == 'e') {
-            (0, vec!["Exit".to_string()])
-        } else {
-            (0, MESSAGES.to_vec())
-        })
+        Ok(
+            if line.starts_with(|c: char| c.to_ascii_lowercase() == 'c') {
+                (0, vec!["Connect".to_string()])
+            } else if line.starts_with(|c: char| c.to_ascii_lowercase() == 't') {
+                (0, vec!["Transaction".to_string()])
+            } else if line.starts_with(|c: char| c.to_ascii_lowercase() == 'h') {
+                (0, vec!["Help".to_string()])
+            } else if line.starts_with(|c: char| c.to_ascii_lowercase() == 'e') {
+                (0, vec!["Exit".to_string()])
+            } else {
+                (0, MESSAGES.to_vec())
+            },
+        )
     }
 }
 
@@ -92,7 +95,7 @@ impl Highlighter for MyHelper {
 
 impl Helper for MyHelper {}
 
-fn send_message(socket: &mut std::net::TcpStream, message: crate::data::message::PromptMessage) {
+fn send_message(socket: &mut std::net::TcpStream, message: PromptMessage) {
     let serialized = serde_json::to_vec(&message).expect("Could not serialize message");
     let len = serialized.len() as u32;
     socket

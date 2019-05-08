@@ -1,16 +1,18 @@
-use crate::data::message::MessageType;
 use crate::Error;
 use bytes::{Bytes, BytesMut};
+use ensicoin_messages::{
+    message::{GetBlocks, GetData, Inv, MessageType},
+    resource::Transaction,
+};
 use futures::sync::mpsc;
-use tokio::codec::{Decoder, Encoder};
 
 /// Messages sent to the server by the connections for example
 pub enum ConnectionMessage {
     Disconnect(Error, String),
-    CheckInv(crate::data::message::Inv, String),
-    Retrieve(crate::data::message::GetData, String),
-    SyncBlocks(crate::data::message::GetBlocks, String),
-    NewTransaction(crate::data::ressources::Transaction),
+    CheckInv(Inv, String),
+    Retrieve(GetData, String),
+    SyncBlocks(GetBlocks, String),
+    NewTransaction(Transaction),
     Connect(std::net::SocketAddr),
     NewPrompt(tokio::net::TcpStream),
     NewConnection(tokio::net::TcpStream),
@@ -49,6 +51,6 @@ impl std::fmt::Display for ConnectionMessage {
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum PromptMessage {
     Connect(std::net::SocketAddr),
-    Transaction(crate::data::ressources::Transaction),
+    Transaction(Transaction),
     Disconnect,
 }

@@ -6,11 +6,13 @@ use ensicoin_serializer::{Deserialize, Deserializer};
 
 use bytes::{Bytes, BytesMut};
 
-use crate::data::message;
-use crate::data::message::MessageCodec;
-use crate::data::message::{ConnectionMessage, ServerMessage};
-use crate::data::message::{Message, MessageType, Ping, Whoami, WhoamiAck};
+use crate::data::intern_messages::{ConnectionMessage, ServerMessage};
+use crate::data::MessageCodec;
 use crate::Error;
+use ensicoin_messages::{
+    message::{self, GetData, Inv, Message, MessageType, Ping, Whoami, WhoamiAck},
+    resource::Transaction,
+};
 
 type ConnectionSender = mpsc::Sender<ConnectionMessage>;
 
@@ -259,7 +261,7 @@ impl Connection {
         let (sender_to_connection, reciever) = mpsc::channel(CHANNEL_CAPACITY);
         let remote = stream.peer_addr().unwrap().to_string();
         let (message_sink, message_stream) =
-            tokio::codec::Framed::new(stream, crate::data::message::MessageCodec::new()).split();
+            tokio::codec::Framed::new(stream, MessageCodec::new()).split();
 
         let timer = tokio_timer::Interval::new_interval(std::time::Duration::from_secs(42))
             .map(ticker_converter as TickerConverter)
@@ -363,13 +365,13 @@ impl Connection {
             }
             MessageType::Inv => {
                 self.server_buffer.push_back(ConnectionMessage::CheckInv(
-                    crate::data::message::Inv::deserialize(&mut de)?,
+                    Inv::deserialize(&mut de)?,
                     self.remote().to_string(),
                 ));
             }
             MessageType::GetData => {
                 self.server_buffer.push_back(ConnectionMessage::Retrieve(
-                    crate::data::message::GetData::deserialize(&mut de)?,
+                    GetData::deserialize(&mut de)?,
                     self.remote().to_string(),
                 ));
             }
@@ -378,9 +380,9 @@ impl Connection {
             MessageType::GetBlocks => {}
             MessageType::Transaction => {
                 self.server_buffer
-                    .push_back(ConnectionMessage::NewTransaction(
-                        crate::data::ressources::Transaction::deserialize(&mut de)?,
-                    ));
+                    .push_back(ConnectionMessage::NewTransaction(Transaction::deserialize(
+                        &mut de,
+                    )?));
             }
 
             MessageType::Unknown(_) => {
