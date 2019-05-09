@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+import "types.proto";
+
+package ensicoin_rpc.node;
+
+enum Error {
+    INVALID_DATA = 0;
+}
+
+message Reply {
+  Error error = 1;
+}
+
+message GetInfoRequest {}
+message GetInfoReply {
+  string implementation = 1;
+  uint32 protocol_version = 2;
+}
+
+message PublishRawTxRequest {
+  bytes raw_tx = 1;
+}
+message PublishRawTxReply {}
+
+message PublishRawBlockRequest {
+  bytes raw_block = 1;
+}
+message PublishRawBlockReply {}
+
+message GetBlockTemplateRequest {}
+message GetBlockTemplateReply {
+  ensicoin_rpc.BlockTemplate template = 1;
+}
+
+message GetBestBlockHashRequest {
+  bytes hash = 1;
+}
+message GetBestBlockHashReply {
+  bytes hash = 1;
+}
+
+message GetBlockByHashRequest {
+  bytes hash = 1;
+}
+message GetBlockByHashReply {
+  ensicoin_rpc.Block block = 1;
+}
+
+message GetTxByHashRequest {}
+message GetTxByHashReply {
+  ensicoin_rpc.Tx tx = 1;
+}
+
+service Node {
+  rpc GetInfo(stream GetInfoRequest) returns (GetInfoReply) {}
+  rpc PublishRawTx(stream PublishRawTxRequest) returns (PublishRawTxReply) {}
+  rpc PublishRawBlock(stream PublishRawBlockRequest) returns (PublishRawBlockReply) {}
+  rpc GetBlockTemplate(GetBlockTemplateRequest) returns (stream GetBlockTemplateReply) {}
+  rpc GetBestBlockHash(GetBestBlockHashRequest) returns (GetBestBlockHashReply) {}
+  rpc GetBlockByHash(GetBlockByHashRequest) returns (GetBlockByHashReply) {}
+  rpc GetTxByHash(GetTxByHashRequest) returns (GetTxByHashReply) {}
+}
