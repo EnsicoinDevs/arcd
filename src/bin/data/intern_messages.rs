@@ -2,7 +2,7 @@ use crate::Error;
 use bytes::{Bytes, BytesMut};
 use ensicoin_messages::{
     message::{GetBlocks, GetData, Inv, MessageType},
-    resource::Transaction,
+    resource::{Block, Transaction},
 };
 use futures::sync::mpsc;
 
@@ -13,6 +13,7 @@ pub enum ConnectionMessage {
     Retrieve(GetData, String),
     SyncBlocks(GetBlocks, String),
     NewTransaction(Transaction),
+    NewBlock(Block),
     Connect(std::net::SocketAddr),
     NewPrompt(tokio::net::TcpStream),
     NewConnection(tokio::net::TcpStream),
@@ -43,6 +44,7 @@ impl std::fmt::Display for ConnectionMessage {
                 ConnectionMessage::NewConnection(_) => "NewConnection",
                 ConnectionMessage::Register(_, _) => "Register",
                 ConnectionMessage::NewPrompt(_) => "NewPrompt",
+                ConnectionMessage::NewBlock(_) => "NewBlock",
             }
         )
     }

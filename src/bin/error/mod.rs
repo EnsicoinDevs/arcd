@@ -11,6 +11,7 @@ pub enum Error {
     NoResponse,
     TimerError(tokio_timer::Error),
     StreamError,
+    GrpcError(tower_grpc::Status),
 }
 
 impl std::fmt::Display for Error {
@@ -27,6 +28,7 @@ impl std::fmt::Display for Error {
             Error::InvalidMagic(n) => write!(f, "Invalid magic, got {} expected {}", n, MAGIC),
             Error::ChannelError => write!(f, "Server channel failed"),
             Error::ServerTermination => write!(f, "Server terminated the connection"),
+            Error::GrpcError(e) => write!(f, "gRPC error: {}", e),
         }
     }
 }
@@ -46,5 +48,11 @@ impl From<std::io::Error> for Error {
 impl From<tokio_timer::Error> for Error {
     fn from(error: tokio_timer::Error) -> Self {
         Error::TimerError(error)
+    }
+}
+
+impl From<tower_grpc::Status> for Error {
+    fn from(error: tower_grpc::Status) -> Self {
+        Error::GrpcError(error)
     }
 }

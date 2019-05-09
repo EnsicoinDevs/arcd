@@ -7,6 +7,7 @@ use crate::data::linkedtx::LinkedTransaction;
 use crate::manager::{Blockchain, Mempool, UtxoManager};
 use crate::network::Connection;
 use crate::Error;
+use std::sync::RwLock;
 
 const CHANNEL_CAPACITY: usize = 1_024;
 
@@ -16,8 +17,8 @@ pub struct Server {
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
     utxo_manager: UtxoManager,
-    blockchain: Blockchain,
-    mempool: Mempool,
+    blockchain: RwLock<Blockchain>,
+    mempool: RwLock<Mempool>,
     collection_count: u64,
     max_connections_count: u64,
 }
@@ -116,8 +117,8 @@ impl Server {
             collection_count: 0,
             max_connections_count: max_conn,
             utxo_manager: UtxoManager::new(data_dir),
-            blockchain: Blockchain::new(data_dir),
-            mempool: Mempool::new(),
+            blockchain: RwLock::new(Blockchain::new(data_dir)),
+            mempool: RwLock::new(Mempool::new()),
             connection_buffer: std::collections::VecDeque::new(),
         };
         info!("Node started");
@@ -157,7 +158,7 @@ impl Server {
             ConnectionMessage::NewTransaction(tx) => {
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);
-                self.mempool.insert(ltx);
+                self.mempool.write().unwrap().insert(ltx);
             }
             ConnectionMessage::NewConnection(socket) => {
                 // TODO: add connection limit
