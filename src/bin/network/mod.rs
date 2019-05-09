@@ -1,4 +1,5 @@
 mod connection;
+mod rpc_server;
 mod server;
 
 pub use connection::Connection;

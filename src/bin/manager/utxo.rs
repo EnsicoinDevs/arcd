@@ -1,6 +1,6 @@
 use crate::data::UtxoData;
 use bytes::BytesMut;
-use ensicoin_messages::resource::{Outpoint, Transaction};
+use ensicoin_messages::resource::{Block, Outpoint, Transaction};
 
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
@@ -33,6 +33,12 @@ impl UtxoManager {
         utxo_dir.push("utxo");
         let database = sled::Db::start_default(utxo_dir).unwrap();
         UtxoManager { database }
+    }
+
+    pub fn spent_utxo(&mut self, block: &Block) -> Vec<(Outpoint, UtxoData)> {
+        let spent = Vec::new();
+        for tx in &block.txs[1..] {}
+        spent
     }
 
     pub fn register(

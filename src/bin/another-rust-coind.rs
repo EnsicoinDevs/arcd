@@ -42,6 +42,9 @@ extern crate secp256k1;
 extern crate sha2;
 extern crate typenum;
 
+extern crate tower_grpc;
+extern crate tower_hyper;
+
 use std::io;
 
 fn main() {
