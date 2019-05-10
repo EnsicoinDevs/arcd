@@ -72,14 +72,15 @@ impl node::server::Node for RPCNode {
         request: Request<Streaming<PublishRawTxRequest>>,
     ) -> Self::PublishRawTxFuture {
         info!("[grpc] PublishRawTx");
-        let state = self.state.clone();
+        let sender = stream::repeat(self.state.server_sender.clone());
         let response = request
             .into_inner()
             .map_err(|e| {
                 warn!("[grpc] error in PublishRawTx: {}", e);
                 e
             })
-            .for_each(|raw_tx_msg| {
+            .zip(sender)
+            .for_each(|(raw_tx_msg, sender)| {
                 let mut de = Deserializer::new(bytes::BytesMut::from(raw_tx_msg.raw_tx));
                 let tx = match ensicoin_messages::resource::Transaction::deserialize(&mut de) {
                     Ok(tx) => tx,
@@ -92,8 +93,7 @@ impl node::server::Node for RPCNode {
                     }
                 };
                 tokio::spawn(
-                    state
-                        .server_sender
+                    sender
                         .clone()
                         .send(ConnectionMessage::NewTransaction(tx))
                         .map_err(|e| warn!("[grpc] can't contact server: {}", e))
@@ -113,14 +113,15 @@ impl node::server::Node for RPCNode {
         request: Request<Streaming<PublishRawBlockRequest>>,
     ) -> Self::PublishRawBlockFuture {
         info!("[grpc] PublishRawBlock");
-        let state = self.state.clone();
+        let sender = stream::repeat(self.state.server_sender.clone());
         let response = request
             .into_inner()
             .map_err(|e| {
                 warn!("[grpc] error in PublishRawBlock: {}", e);
                 e
             })
-            .for_each(|raw_blk_msg| {
+            .zip(sender)
+            .for_each(|(raw_blk_msg, sender)| {
                 let mut de = Deserializer::new(bytes::BytesMut::from(raw_blk_msg.raw_block));
                 let block = match ensicoin_messages::resource::Block::deserialize(&mut de) {
                     Ok(b) => b,
@@ -133,8 +134,7 @@ impl node::server::Node for RPCNode {
                     }
                 };
                 tokio::spawn(
-                    state
-                        .server_sender
+                    sender
                         .clone()
                         .send(ConnectionMessage::NewBlock(block))
                         .map_err(|e| warn!("[grpc] can't contact server: {}", e))
