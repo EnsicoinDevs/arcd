@@ -76,7 +76,7 @@ fn main() {
             );
         }
         ("", _) => {
-            let server = Server::new(
+            Server::run(
                 matches
                     .value_of("max connections")
                     .unwrap()
@@ -88,7 +88,6 @@ fn main() {
                 grpc_port,
                 matches.is_present("grpc_localhost"),
             );
-            tokio::run(server);
         }
         (_, _) => (),
     };

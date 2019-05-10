@@ -87,14 +87,14 @@ type FullMessageStreamWithPrompt =
     futures::stream::Select<FullMessageStream, NewConnectionStreamErrored>;
 
 impl Server {
-    pub fn new(
+    pub fn run(
         max_conn: u64,
         data_dir: &std::path::Path,
         port: u16,
         prompt_port: u16,
         grpc_port: u16,
         grpc_localhost: bool,
-    ) -> Server {
+    ) {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
         let listener =
@@ -130,7 +130,7 @@ impl Server {
             connection_buffer: std::collections::VecDeque::new(),
         };
         info!("Node created");
-        RPCNode::run(
+        let rpc = RPCNode::new(
             server.mempool.clone(),
             server.blockchain.clone(),
             server.connection_sender.clone(),
@@ -141,7 +141,7 @@ impl Server {
             },
             grpc_port,
         );
-        server
+        tokio::run(rpc.join(server).map(|_| ()));
     }
 
     fn handle_message(&mut self, message: ConnectionMessage) {

@@ -51,13 +51,13 @@ impl State {
 }
 
 impl RPCNode {
-    pub fn run(
+    pub fn new(
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         sender: futures::sync::mpsc::Sender<ConnectionMessage>,
         bind_address: &str,
         port: u16,
-    ) {
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
         let handler = RPCNode {
             state: Arc::new(State::new(mempool, blockchain, sender)),
         };
@@ -82,7 +82,7 @@ impl RPCNode {
                 Ok(())
             })
             .map_err(|e| error!("[gRPC] accept error: {}", e));
-        tokio::spawn(serve);
+        Box::new(serve)
     }
 }
 
