@@ -160,6 +160,7 @@ impl Server {
                 self.utxo_manager.link(&mut ltx);
                 self.mempool.write().unwrap().insert(ltx);
             }
+            ConnectionMessage::NewBlock(_) => (),
             ConnectionMessage::NewConnection(socket) => {
                 // TODO: add connection limit
                 let new_conn = Connection::new(socket, self.connection_sender.clone());
