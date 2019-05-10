@@ -23,6 +23,7 @@ use ensicoin_serializer::{Deserialize, Deserializer};
 use futures::{future, stream, Future, Sink, Stream};
 use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
+use tokio_bus::Bus;
 use tower_grpc::{Request, Response, Streaming};
 use tower_hyper::server::{Http, Server};
 
@@ -35,12 +36,12 @@ struct State {
     mempool: Arc<RwLock<Mempool>>,
     blockchain: Arc<RwLock<Blockchain>>,
     server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
-    broadcast: Arc<bus::Bus<BroadcastMessage>>,
+    broadcast: Arc<Bus<BroadcastMessage>>,
 }
 
 impl State {
     fn new(
-        broadcast: Arc<bus::Bus<BroadcastMessage>>,
+        broadcast: Arc<Bus<BroadcastMessage>>,
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
@@ -56,7 +57,7 @@ impl State {
 
 impl RPCNode {
     pub fn new(
-        broadcast: Arc<bus::Bus<BroadcastMessage>>,
+        broadcast: Arc<Bus<BroadcastMessage>>,
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         sender: futures::sync::mpsc::Sender<ConnectionMessage>,

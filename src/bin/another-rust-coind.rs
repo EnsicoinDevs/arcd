@@ -44,7 +44,7 @@ extern crate typenum;
 extern crate tower_grpc;
 extern crate tower_hyper;
 
-extern crate bus;
+extern crate tokio_bus;
 
 use std::io;
 

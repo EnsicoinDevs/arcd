@@ -1,6 +1,7 @@
 use futures::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
+use tokio_bus::Bus;
 
 use crate::data::intern_messages::{
     BroadcastMessage, ConnectionMessage, PromptMessage, ServerMessage,
@@ -15,7 +16,7 @@ use std::sync::{Arc, RwLock};
 const CHANNEL_CAPACITY: usize = 1_024;
 
 pub struct Server {
-    broadcast_channel: Arc<bus::Bus<BroadcastMessage>>,
+    broadcast_channel: Arc<Bus<BroadcastMessage>>,
     connection_receiver: FullMessageStreamWithPrompt,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
@@ -122,7 +123,7 @@ impl Server {
         let message_stream = message_stream.select(prompt_stream);
 
         let server = Server {
-            broadcast_channel: Arc::new(bus::Bus::new(30)),
+            broadcast_channel: Arc::new(Bus::new(30)),
             connections: std::collections::HashMap::new(),
             connection_receiver: message_stream,
             connection_sender: sender,

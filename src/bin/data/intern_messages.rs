@@ -57,6 +57,7 @@ pub enum PromptMessage {
     Disconnect,
 }
 
+#[derive(Clone)]
 pub enum BroadcastMessage {
     BestBlock(ensicoin_messages::resource::Block),
 }
