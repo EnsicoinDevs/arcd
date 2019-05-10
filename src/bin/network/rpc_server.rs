@@ -25,30 +25,64 @@ use tokio::net::TcpListener;
 use tower_grpc::{Request, Response, Streaming};
 use tower_hyper::server::{Http, Server};
 
-use crate::Error;
-
 #[derive(Clone)]
 pub struct RPCNode {
     state: Arc<State>,
 }
 
 struct State {
-    mempool: RwLock<Mempool>,
-    blockchain: RwLock<Blockchain>,
-    server_sender: tokio::sync::mpsc::Sender<ConnectionMessage>,
+    mempool: Arc<RwLock<Mempool>>,
+    blockchain: Arc<RwLock<Blockchain>>,
+    server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
 }
 
 impl State {
     fn new(
-        mempool: RwLock<Mempool>,
-        blockchain: RwLock<Blockchain>,
-        server_sender: tokio::sync::mpsc::Sender<ConnectionMessage>,
+        mempool: Arc<RwLock<Mempool>>,
+        blockchain: Arc<RwLock<Blockchain>>,
+        server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
     ) -> State {
         State {
             mempool,
             blockchain,
             server_sender,
         }
+    }
+}
+
+impl RPCNode {
+    pub fn run(
+        mempool: Arc<RwLock<Mempool>>,
+        blockchain: Arc<RwLock<Blockchain>>,
+        sender: futures::sync::mpsc::Sender<ConnectionMessage>,
+        bind_address: &str,
+        port: u16,
+    ) {
+        let handler = RPCNode {
+            state: Arc::new(State::new(mempool, blockchain, sender)),
+        };
+        let new_service = server::NodeServer::new(handler);
+
+        let mut server = Server::new(new_service);
+        let http = Http::new().http2_only(true).clone();
+
+        let addr = format!("{}:{}", bind_address, port).parse().unwrap();
+        let bind = TcpListener::bind(&addr).unwrap();
+
+        info!("Started gRPC server");
+
+        let serve = bind
+            .incoming()
+            .for_each(move |sock| {
+                if let Err(e) = sock.set_nodelay(true) {
+                    return Err(e);
+                }
+                let serve = server.serve_with(sock, http.clone());
+                tokio::spawn(serve.map_err(|e| error!("[gRPC] h2 error: {}", e)));
+                Ok(())
+            })
+            .map_err(|e| error!("[gRPC] accept error: {}", e));
+        tokio::spawn(serve);
     }
 }
 
@@ -72,15 +106,15 @@ impl node::server::Node for RPCNode {
         request: Request<Streaming<PublishRawTxRequest>>,
     ) -> Self::PublishRawTxFuture {
         info!("[grpc] PublishRawTx");
-        let sender = stream::repeat(self.state.server_sender.clone());
+        let sender = self.state.server_sender.clone();
         let response = request
             .into_inner()
             .map_err(|e| {
                 warn!("[grpc] error in PublishRawTx: {}", e);
                 e
             })
-            .zip(sender)
-            .for_each(|(raw_tx_msg, sender)| {
+            //.zip(sender)
+            .for_each(move |raw_tx_msg| {
                 let mut de = Deserializer::new(bytes::BytesMut::from(raw_tx_msg.raw_tx));
                 let tx = match ensicoin_messages::resource::Transaction::deserialize(&mut de) {
                     Ok(tx) => tx,
@@ -113,15 +147,14 @@ impl node::server::Node for RPCNode {
         request: Request<Streaming<PublishRawBlockRequest>>,
     ) -> Self::PublishRawBlockFuture {
         info!("[grpc] PublishRawBlock");
-        let sender = stream::repeat(self.state.server_sender.clone());
+        let sender = self.state.server_sender.clone();
         let response = request
             .into_inner()
             .map_err(|e| {
                 warn!("[grpc] error in PublishRawBlock: {}", e);
                 e
             })
-            .zip(sender)
-            .for_each(|(raw_blk_msg, sender)| {
+            .for_each(move |raw_blk_msg| {
                 let mut de = Deserializer::new(bytes::BytesMut::from(raw_blk_msg.raw_block));
                 let block = match ensicoin_messages::resource::Block::deserialize(&mut de) {
                     Ok(b) => b,

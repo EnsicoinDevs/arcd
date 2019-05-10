@@ -6,8 +6,9 @@ use crate::data::intern_messages::{ConnectionMessage, PromptMessage, ServerMessa
 use crate::data::linkedtx::LinkedTransaction;
 use crate::manager::{Blockchain, Mempool, UtxoManager};
 use crate::network::Connection;
+use crate::network::RPCNode;
 use crate::Error;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 const CHANNEL_CAPACITY: usize = 1_024;
 
@@ -17,8 +18,8 @@ pub struct Server {
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
     utxo_manager: UtxoManager,
-    blockchain: RwLock<Blockchain>,
-    mempool: RwLock<Mempool>,
+    blockchain: Arc<RwLock<Blockchain>>,
+    mempool: Arc<RwLock<Mempool>>,
     collection_count: u64,
     max_connections_count: u64,
 }
@@ -86,7 +87,14 @@ type FullMessageStreamWithPrompt =
     futures::stream::Select<FullMessageStream, NewConnectionStreamErrored>;
 
 impl Server {
-    pub fn new(max_conn: u64, data_dir: &std::path::Path, port: u16, prompt_port: u16) -> Server {
+    pub fn new(
+        max_conn: u64,
+        data_dir: &std::path::Path,
+        port: u16,
+        prompt_port: u16,
+        grpc_port: u16,
+        grpc_localhost: bool,
+    ) -> Server {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
         let listener =
@@ -117,11 +125,22 @@ impl Server {
             collection_count: 0,
             max_connections_count: max_conn,
             utxo_manager: UtxoManager::new(data_dir),
-            blockchain: RwLock::new(Blockchain::new(data_dir)),
-            mempool: RwLock::new(Mempool::new()),
+            blockchain: Arc::new(RwLock::new(Blockchain::new(data_dir))),
+            mempool: Arc::new(RwLock::new(Mempool::new())),
             connection_buffer: std::collections::VecDeque::new(),
         };
-        info!("Node started");
+        info!("Node created");
+        RPCNode::run(
+            server.mempool.clone(),
+            server.blockchain.clone(),
+            server.connection_sender.clone(),
+            if grpc_localhost {
+                "127.0.0.1"
+            } else {
+                "0.0.0.0"
+            },
+            grpc_port,
+        );
         server
     }
 
@@ -175,11 +194,10 @@ impl Server {
                 );
                 let deserialized: tokio_serde_json::ReadJson<_, PromptMessage> =
                     tokio_serde_json::ReadJson::new(length_delimited);
-                let senders = futures::stream::repeat(self.connection_sender.clone());
+                let sender = self.connection_sender.clone();
                 let deserialized_handled = deserialized
                     .map_err(|e| println!("Error in prompt: {:?}", e))
-                    .zip(senders)
-                    .for_each(|(message, sender)| {
+                    .for_each(move |message| {
                         match message {
                             PromptMessage::Connect(addr) => {
                                 tokio::spawn(

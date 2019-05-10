@@ -61,6 +61,7 @@ fn main() {
 
     let listen_port = matches.value_of("port").unwrap().parse().unwrap();
     let prompt_port = matches.value_of("prompt_port").unwrap().parse().unwrap();
+    let grpc_port = matches.value_of("grpc_port").unwrap().parse().unwrap();
 
     let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
     std::fs::create_dir_all(&data_dir).unwrap();
@@ -84,6 +85,8 @@ fn main() {
                 &data_dir,
                 listen_port,
                 prompt_port,
+                grpc_port,
+                matches.is_present("grpc_localhost"),
             );
             tokio::run(server);
         }

@@ -65,6 +65,21 @@ pub fn build_cli() -> App<'static, 'static> {
                 .help("Port to connect the prompt to"),
         )
         .arg(
+            Arg::with_name("grpc_port")
+                .long("grpc")
+                .short("g")
+                .help("Listening port for gRPC")
+                .takes_value(true)
+                .default_value(crate::constants::DEFAULT_GRPC_PORT)
+                .validator(is_port),
+        )
+        .arg(
+            Arg::with_name("grpc_localhost")
+                .long("grpc-localhost")
+                .short("l")
+                .help("Restrict grpc to localhost"),
+        )
+        .arg(
             Arg::with_name("max connections")
                 .short("c")
                 .long("connections")
