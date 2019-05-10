@@ -1,3 +1,4 @@
+use crate::Error;
 use ensicoin_messages::resource::Block;
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
@@ -31,7 +32,25 @@ impl Blockchain {
         }
     }
 
-    pub fn add_block(&mut self, block: &Block) -> Result<(), sled::Error<()>> {
+    pub fn exists(&mut self, hash: &ensicoin_serializer::Sha256Result) -> Result<bool, Error> {
+        self.database
+            .contains_key(hash)
+            .map_err(|e| Error::DatabaseError(e))
+    }
+
+    pub fn find_last_common_block(
+        &mut self,
+        get_blocks: &ensicoin_messages::message::GetBlocks,
+    ) -> Result<Option<Sha256Result>, Error> {
+        for hash in get_blocks.block_locator.iter() {
+            if self.exists(hash)? {
+                return Ok(Some(hash.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn add_block(&mut self, block: &Block) -> Result<(), Error> {
         let raw_block = block.serialize().to_vec();
         let hash = block.double_hash();
         //let utxo = block.utxo().serialize().to_vec();
