@@ -5,13 +5,13 @@ use ensicoin_messages::resource::{Block, Outpoint, Transaction};
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
 pub enum Error {
-    DatabaseError(sled::Error<()>),
+    DatabaseError(sled::Error),
     ParseError(ensicoin_serializer::Error),
     NoValueFound,
 }
 
-impl From<sled::Error<()>> for Error {
-    fn from(error: sled::Error<()>) -> Error {
+impl From<sled::Error> for Error {
+    fn from(error: sled::Error) -> Error {
         Error::DatabaseError(error)
     }
 }

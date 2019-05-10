@@ -176,7 +176,7 @@ impl Server {
             }
             ConnectionMessage::CheckInv(_, _) => (),
             ConnectionMessage::Retrieve(_, _) => (),
-            ConnectionMessage::SyncBlocks(_, _) => (),
+            ConnectionMessage::SyncBlocks(get_blocks, remote) => {}
             ConnectionMessage::Connect(address) => {
                 Connection::initiate(&address, self.connection_sender.clone());
             }

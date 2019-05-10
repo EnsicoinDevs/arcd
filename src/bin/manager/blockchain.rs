@@ -32,14 +32,14 @@ impl Blockchain {
         }
     }
 
-    pub fn exists(&mut self, hash: &ensicoin_serializer::Sha256Result) -> Result<bool, Error> {
+    pub fn exists(&self, hash: &ensicoin_serializer::Sha256Result) -> Result<bool, Error> {
         self.database
             .contains_key(hash)
             .map_err(|e| Error::DatabaseError(e))
     }
 
     pub fn find_last_common_block(
-        &mut self,
+        &self,
         get_blocks: &ensicoin_messages::message::GetBlocks,
     ) -> Result<Option<Sha256Result>, Error> {
         for hash in get_blocks.block_locator.iter() {
