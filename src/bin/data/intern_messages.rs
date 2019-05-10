@@ -6,14 +6,19 @@ use ensicoin_messages::{
 };
 use futures::sync::mpsc;
 
+pub enum Source {
+    Connection(String),
+    RPC,
+}
+
 /// Messages sent to the server by the connections for example
 pub enum ConnectionMessage {
     Disconnect(Error, String),
-    CheckInv(Inv, String),
-    Retrieve(GetData, String),
-    SyncBlocks(GetBlocks, String),
-    NewTransaction(Transaction),
-    NewBlock(Block),
+    CheckInv(Inv, Source),
+    Retrieve(GetData, Source),
+    SyncBlocks(GetBlocks, Source),
+    NewTransaction(Transaction, Source),
+    NewBlock(Block, Source),
     Connect(std::net::SocketAddr),
     NewPrompt(tokio::net::TcpStream),
     NewConnection(tokio::net::TcpStream),
@@ -39,12 +44,12 @@ impl std::fmt::Display for ConnectionMessage {
                 ConnectionMessage::CheckInv(_, _) => "CheckInv",
                 ConnectionMessage::Retrieve(_, _) => "Retrieve",
                 ConnectionMessage::SyncBlocks(_, _) => "SyncBlocks",
-                ConnectionMessage::NewTransaction(_) => "NewTx",
+                ConnectionMessage::NewTransaction(_, _) => "NewTx",
                 ConnectionMessage::Connect(_) => "Connect",
                 ConnectionMessage::NewConnection(_) => "NewConnection",
                 ConnectionMessage::Register(_, _) => "Register",
                 ConnectionMessage::NewPrompt(_) => "NewPrompt",
-                ConnectionMessage::NewBlock(_) => "NewBlock",
+                ConnectionMessage::NewBlock(_, _) => "NewBlock",
             }
         )
     }

@@ -16,6 +16,7 @@ use node::{
 };
 
 use crate::constants::{IMPLEMENTATION, VERSION};
+use crate::data::intern_messages;
 use crate::data::intern_messages::BroadcastMessage;
 use crate::data::intern_messages::ConnectionMessage;
 use crate::manager::{Blockchain, Mempool};
@@ -135,7 +136,10 @@ impl node::server::Node for RPCNode {
                 tokio::spawn(
                     sender
                         .clone()
-                        .send(ConnectionMessage::NewTransaction(tx))
+                        .send(ConnectionMessage::NewTransaction(
+                            tx,
+                            intern_messages::Source::RPC,
+                        ))
                         .map_err(|e| warn!("[grpc] can't contact server: {}", e))
                         .map(|_| ()),
                 );
@@ -175,7 +179,10 @@ impl node::server::Node for RPCNode {
                 tokio::spawn(
                     sender
                         .clone()
-                        .send(ConnectionMessage::NewBlock(block))
+                        .send(ConnectionMessage::NewBlock(
+                            block,
+                            intern_messages::Source::RPC,
+                        ))
                         .map_err(|e| warn!("[grpc] can't contact server: {}", e))
                         .map(|_| ()),
                 );

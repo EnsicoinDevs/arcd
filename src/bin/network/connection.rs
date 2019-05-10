@@ -6,7 +6,7 @@ use ensicoin_serializer::{Deserialize, Deserializer};
 
 use bytes::{Bytes, BytesMut};
 
-use crate::data::intern_messages::{ConnectionMessage, ServerMessage};
+use crate::data::intern_messages::{self, ConnectionMessage, ServerMessage};
 use crate::data::MessageCodec;
 use crate::Error;
 use ensicoin_messages::{
@@ -366,13 +366,13 @@ impl Connection {
             MessageType::Inv => {
                 self.server_buffer.push_back(ConnectionMessage::CheckInv(
                     Inv::deserialize(&mut de)?,
-                    self.remote().to_string(),
+                    intern_messages::Source::Connection(self.remote().to_string()),
                 ));
             }
             MessageType::GetData => {
                 self.server_buffer.push_back(ConnectionMessage::Retrieve(
                     GetData::deserialize(&mut de)?,
-                    self.remote().to_string(),
+                    intern_messages::Source::Connection(self.remote().to_string()),
                 ));
             }
             MessageType::NotFound => (),
@@ -380,9 +380,10 @@ impl Connection {
             MessageType::GetBlocks => {}
             MessageType::Transaction => {
                 self.server_buffer
-                    .push_back(ConnectionMessage::NewTransaction(Transaction::deserialize(
-                        &mut de,
-                    )?));
+                    .push_back(ConnectionMessage::NewTransaction(
+                        Transaction::deserialize(&mut de)?,
+                        intern_messages::Source::Connection(self.remote().to_string()),
+                    ));
             }
 
             MessageType::Unknown(_) => {

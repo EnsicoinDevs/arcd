@@ -180,12 +180,12 @@ impl Server {
             ConnectionMessage::Connect(address) => {
                 Connection::initiate(&address, self.connection_sender.clone());
             }
-            ConnectionMessage::NewTransaction(tx) => {
+            ConnectionMessage::NewTransaction(tx, _) => {
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);
                 self.mempool.write().unwrap().insert(ltx);
             }
-            ConnectionMessage::NewBlock(_) => (),
+            ConnectionMessage::NewBlock(_, _) => (),
             ConnectionMessage::NewConnection(socket) => {
                 // TODO: add connection limit
                 let new_conn = Connection::new(socket, self.connection_sender.clone());
