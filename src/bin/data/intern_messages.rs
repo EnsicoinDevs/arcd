@@ -56,3 +56,7 @@ pub enum PromptMessage {
     Transaction(Transaction),
     Disconnect,
 }
+
+pub enum BroadcastMessage {
+    BestBlock(ensicoin_messages::resource::Block),
+}

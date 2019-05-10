@@ -16,6 +16,7 @@ use node::{
 };
 
 use crate::constants::{IMPLEMENTATION, VERSION};
+use crate::data::intern_messages::BroadcastMessage;
 use crate::data::intern_messages::ConnectionMessage;
 use crate::manager::{Blockchain, Mempool};
 use ensicoin_serializer::{Deserialize, Deserializer};
@@ -34,15 +35,18 @@ struct State {
     mempool: Arc<RwLock<Mempool>>,
     blockchain: Arc<RwLock<Blockchain>>,
     server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
+    broadcast: Arc<bus::Bus<BroadcastMessage>>,
 }
 
 impl State {
     fn new(
+        broadcast: Arc<bus::Bus<BroadcastMessage>>,
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
     ) -> State {
         State {
+            broadcast,
             mempool,
             blockchain,
             server_sender,
@@ -52,6 +56,7 @@ impl State {
 
 impl RPCNode {
     pub fn new(
+        broadcast: Arc<bus::Bus<BroadcastMessage>>,
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         sender: futures::sync::mpsc::Sender<ConnectionMessage>,
@@ -59,7 +64,7 @@ impl RPCNode {
         port: u16,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let handler = RPCNode {
-            state: Arc::new(State::new(mempool, blockchain, sender)),
+            state: Arc::new(State::new(broadcast, mempool, blockchain, sender)),
         };
         let new_service = server::NodeServer::new(handler);
 
