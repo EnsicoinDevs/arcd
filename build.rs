@@ -10,11 +10,11 @@ fn main() {
     tower_grpc_build::Config::new()
         .enable_server(true)
         .enable_client(false)
-        .build(&["protos/node.proto"], &["protos"])
+        .build(&["proto/node.proto"], &["protos"])
         .unwrap_or_else(|e| panic!("protobuf compilation failed: {}", e));
     tower_grpc_build::Config::new()
         .enable_server(true)
         .enable_client(false)
-        .build(&["protos/types.proto"], &["protos"])
+        .build(&["proto/types.proto"], &["protos"])
         .unwrap_or_else(|e| panic!("protobuf compilation failed: {}", e));
 }
