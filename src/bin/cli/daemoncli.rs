@@ -37,6 +37,12 @@ lazy_static! {
 pub fn build_cli() -> App<'static, 'static> {
     app_from_crate!()
         .arg(
+            Arg::with_name("save")
+                .short("s")
+                .long("save")
+                .help("Save command line arguments as new settings"),
+        )
+        .arg(
             Arg::with_name("verbose")
                 .short("v")
                 .long("verbose")
@@ -54,13 +60,11 @@ pub fn build_cli() -> App<'static, 'static> {
                 .short("p")
                 .long("port")
                 .help("Set the listening port")
-                .default_value(DEFAULT_PORT)
                 .validator(is_port),
         )
         .arg(
             Arg::with_name("prompt_port")
                 .long("prompt")
-                .default_value(DEFAULT_PROMPT)
                 .validator(is_port)
                 .help("Port to connect the prompt to"),
         )
@@ -70,7 +74,6 @@ pub fn build_cli() -> App<'static, 'static> {
                 .short("g")
                 .help("Listening port for gRPC")
                 .takes_value(true)
-                .default_value(crate::constants::DEFAULT_GRPC_PORT)
                 .validator(is_port),
         )
         .arg(
@@ -84,7 +87,6 @@ pub fn build_cli() -> App<'static, 'static> {
                 .short("c")
                 .long("connections")
                 .help("Specifies the maximum number of connections")
-                .default_value(crate::constants::DEFAULT_MAX_CONN)
                 .validator(is_u64),
         )
         .arg(

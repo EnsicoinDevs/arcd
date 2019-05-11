@@ -60,10 +60,6 @@ fn main() {
     };
     simplelog::TermLogger::init(log_level, simplelog::Config::default()).unwrap();
 
-    let listen_port = matches.value_of("port").unwrap().parse().unwrap();
-    let prompt_port = matches.value_of("prompt_port").unwrap().parse().unwrap();
-    let grpc_port = matches.value_of("grpc_port").unwrap().parse().unwrap();
-
     let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
     std::fs::create_dir_all(&data_dir).unwrap();
 
@@ -77,17 +73,97 @@ fn main() {
             );
         }
         ("", _) => {
+            let mut settings_path = data_dir.clone();
+            settings_path.push("settings.json");
+            let settings = match std::fs::File::open(settings_path.clone()) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!(
+                        "Error: {}",
+                        if e.kind() == std::io::ErrorKind::NotFound {
+                            "node not bootstraped, please run arc-bootstrap".to_string()
+                        } else {
+                            format!("{}", e)
+                        }
+                    );
+                    return;
+                }
+            };
+            let mut defaults: std::collections::HashMap<String, String> =
+                serde_json::from_reader(settings).expect("Could no read settings file");
+
+            let save = matches.is_present("save");
+            let listen_port = if matches.is_present("port") {
+                let val = matches.value_of("port").unwrap();
+                if save {
+                    defaults.insert(String::from("port"), String::from(val));
+                };
+                val
+            } else if defaults.contains_key("port") {
+                defaults.get("port").unwrap()
+            } else {
+                constants::DEFAULT_PORT
+            }
+            .parse()
+            .unwrap();
+            let prompt_port = if matches.is_present("prompt_port") {
+                let val = matches.value_of("prompt_port").unwrap();
+                if save {
+                    defaults.insert(String::from("prompt_port"), String::from(val));
+                };
+                val
+            } else if defaults.contains_key("prompt_port") {
+                defaults.get("prompt_port").unwrap()
+            } else {
+                constants::DEFAULT_PROMPT
+            }
+            .parse()
+            .unwrap();
+            let grpc_port = if matches.is_present("grpc_port") {
+                let val = matches.value_of("grpc_port").unwrap();
+                if save {
+                    defaults.insert(String::from("grpc_port"), String::from(val));
+                };
+                val
+            } else if defaults.contains_key("grpc_port") {
+                defaults.get("grpc_port").unwrap()
+            } else {
+                constants::DEFAULT_GRPC_PORT
+            }
+            .parse()
+            .unwrap();
+            let max_conn = if matches.is_present("max connections") {
+                let val = matches.value_of("max connections").unwrap();
+                if save {
+                    defaults.insert(String::from("max connections"), String::from(val));
+                };
+                val
+            } else if defaults.contains_key("max connections") {
+                defaults.get("max connections").unwrap()
+            } else {
+                constants::DEFAULT_MAX_CONN
+            }
+            .parse()
+            .unwrap();
+            let grpc_localhost =
+                matches.is_present("grpc_localhost") || defaults.contains_key("grpc_localhost");
+            if save {
+                let settings = match std::fs::File::open(settings_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Error saving settings: {}", e);
+                        return;
+                    }
+                };
+                serde_json::to_writer(settings, &defaults).unwrap();
+            }
             Server::run(
-                matches
-                    .value_of("max connections")
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
+                max_conn,
                 &data_dir,
                 listen_port,
                 prompt_port,
                 grpc_port,
-                matches.is_present("grpc_localhost"),
+                grpc_localhost,
             );
         }
         (_, _) => (),
