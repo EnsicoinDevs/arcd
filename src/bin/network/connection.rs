@@ -10,7 +10,7 @@ use crate::data::intern_messages::{self, ConnectionMessage, ServerMessage};
 use crate::data::MessageCodec;
 use crate::Error;
 use ensicoin_messages::{
-    message::{self, GetData, Inv, Message, MessageType, Ping, Whoami, WhoamiAck},
+    message::{self, GetBlocks, GetData, Inv, Message, MessageType, Ping, Whoami, WhoamiAck},
     resource::Transaction,
 };
 
@@ -103,7 +103,13 @@ impl futures::Future for Connection {
                 debug!("Message count: {}", self.message_buffer.len());
                 while !self.message_buffer.is_empty() {
                     let (t, v) = self.message_buffer.pop_front().unwrap();
-                    info!("Sending {} to [{}]", t, self.remote());
+                    match t {
+                        ensicoin_messages::message::MessageType::Ping
+                        | ensicoin_messages::message::MessageType::Pong => {
+                            trace!("Sending {} to [{}]", t, self.remote())
+                        }
+                        _ => info!("Sending {} to [{}]", t, self.remote()),
+                    };
                     match self.message_sink.start_send(v) {
                         Ok(AsyncSink::Ready) => {
                             debug!("Started sending");
@@ -180,7 +186,13 @@ impl futures::Future for Connection {
                                 }
                             }
                             ServerMessage::HandleMessage(t, v) => {
-                                info!("{} from [{}]", t, self.remote());
+                                match t {
+                                    ensicoin_messages::message::MessageType::Ping
+                                    | ensicoin_messages::message::MessageType::Pong => {
+                                        trace!("{} from [{}]", t, self.remote())
+                                    }
+                                    _ => info!("{} from [{}]", t, self.remote()),
+                                };
                                 if let Err(e) = self.handle_message(t, v) {
                                     self.terminate(e);
                                 }
@@ -257,6 +269,9 @@ impl Terminator {
 }
 
 impl Connection {
+    pub fn source(&self) -> intern_messages::Source {
+        intern_messages::Source::Connection(String::from(self.remote.clone()))
+    }
     pub fn new(stream: TcpStream, sender: ConnectionSender) -> Connection {
         let (sender_to_connection, reciever) = mpsc::channel(CHANNEL_CAPACITY);
         let remote = stream.peer_addr().unwrap().to_string();
@@ -377,7 +392,12 @@ impl Connection {
             }
             MessageType::NotFound => (),
             MessageType::Block => (),
-            MessageType::GetBlocks => {}
+            MessageType::GetBlocks => {
+                self.server_buffer.push_back(ConnectionMessage::SyncBlocks(
+                    GetBlocks::deserialize(&mut de)?,
+                    self.source(),
+                ));
+            }
             MessageType::GetMempool => (),
             MessageType::Transaction => {
                 self.server_buffer

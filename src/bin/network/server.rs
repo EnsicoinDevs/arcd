@@ -1,3 +1,4 @@
+use ensicoin_messages::message::Message;
 use futures::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
@@ -45,7 +46,7 @@ impl futures::Future for Server {
                 let (dest, msg) = self.connection_buffer.pop_front().unwrap();
                 match self.connections.get_mut(&dest).unwrap().start_send(msg) {
                     Ok(AsyncSink::NotReady(msg)) => self.connection_buffer.push_front((dest, msg)),
-                    Err(e) => warn!("Can't concat [{}] connection: {}", dest, e),
+                    Err(e) => warn!("Can't conctact [{}] connection: {}", dest, e),
                     Ok(AsyncSink::Ready) => {
                         match self.connections.get_mut(&dest).unwrap().poll_complete() {
                             Ok(Async::Ready(_)) => (),
@@ -92,6 +93,10 @@ type FullMessageStreamWithPrompt =
     futures::stream::Select<FullMessageStream, NewConnectionStreamErrored>;
 
 impl Server {
+    fn send(&mut self, dest: String, msg: crate::data::intern_messages::ServerMessage) {
+        self.connection_buffer.push_back((dest, msg));
+    }
+
     pub fn run(
         max_conn: u64,
         data_dir: &std::path::Path,
@@ -160,6 +165,19 @@ impl Server {
                     info!("Registered [{}]", &host);
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
+                        let getblocks = self
+                            .blockchain
+                            .read()
+                            .unwrap()
+                            .generate_get_blocks()
+                            .unwrap();
+                        let (t, v) = getblocks.raw_bytes();
+                        let msg = ServerMessage::SendMessage(t, v);
+                        let getmempool = ensicoin_messages::message::GetMempool {};
+                        let (t, v) = getmempool.raw_bytes();
+                        let msg_get_mempool = ServerMessage::SendMessage(t, v);
+                        self.send(host.clone(), msg);
+                        self.send(host.clone(), msg_get_mempool);
                     };
                     self.connections.insert(host, sender);
                     self.collection_count += 1;
@@ -179,18 +197,51 @@ impl Server {
                 };
                 warn!("Deleted Connection [{}] because of: ({})", host, e);
             }
-            ConnectionMessage::CheckInv(_, _) => (),
-            ConnectionMessage::Retrieve(_, _) => (),
-            ConnectionMessage::SyncBlocks(get_blocks, remote) => {}
+            ConnectionMessage::CheckInv(inv, source) => {
+                let (unknown_blocks, _txs) =
+                    self.blockchain.read().unwrap().unknown_inv(inv).unwrap();
+                let get_data = ensicoin_messages::message::GetData {
+                    inventory: unknown_blocks,
+                };
+                if get_data.inventory.len() > 0 {
+                    match source {
+                        crate::data::intern_messages::Source::Connection(remote) => {
+                            let (t, v) = get_data.raw_bytes();
+                            self.send(remote, ServerMessage::SendMessage(t, v));
+                        }
+                        _ => (),
+                    }
+                };
+            }
+            ConnectionMessage::Retrieve(_, _) => (), //TODO: handle getdata
+            ConnectionMessage::SyncBlocks(get_blocks, remote) => {
+                let inv = match self.blockchain.read().unwrap().generate_inv(&get_blocks) {
+                    Ok(i) => i,
+                    Err(e) => {
+                        warn!("Database error: {}", e);
+                        return;
+                    }
+                };
+                if inv.inventory.len() > 0 {
+                    match remote {
+                        crate::data::intern_messages::Source::Connection(remote) => {
+                            let (t, v) = inv.raw_bytes();
+                            self.send(remote, ServerMessage::SendMessage(t, v));
+                        }
+                        _ => (),
+                    }
+                }
+            }
             ConnectionMessage::Connect(address) => {
                 Connection::initiate(&address, self.connection_sender.clone());
             }
             ConnectionMessage::NewTransaction(tx, _) => {
+                //TODO how to verify tx
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);
                 self.mempool.write().unwrap().insert(ltx);
             }
-            ConnectionMessage::NewBlock(_, _) => (),
+            ConnectionMessage::NewBlock(_, _) => (), //TODO verify blocks
             ConnectionMessage::NewConnection(socket) => {
                 // TODO: add connection limit
                 let new_conn = Connection::new(socket, self.connection_sender.clone());
@@ -198,7 +249,6 @@ impl Server {
                 tokio::spawn(new_conn);
             }
             ConnectionMessage::NewPrompt(socket) => {
-                // TODO: How to handle prompts
                 let length_delimited = tokio::codec::FramedRead::new(
                     socket,
                     tokio::codec::LengthDelimitedCodec::new(),

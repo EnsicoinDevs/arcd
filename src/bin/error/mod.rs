@@ -12,7 +12,7 @@ pub enum Error {
     TimerError(tokio_timer::Error),
     StreamError,
     DatabaseError(sled::Error),
-    NotFound,
+    NotFound(String),
 }
 
 impl std::fmt::Display for Error {
@@ -29,7 +29,7 @@ impl std::fmt::Display for Error {
             Error::InvalidMagic(n) => write!(f, "Invalid magic, got {} expected {}", n, MAGIC),
             Error::ChannelError => write!(f, "Server channel failed"),
             Error::ServerTermination => write!(f, "Server terminated the connection"),
-            Error::NotFound => write!(f, "Resource not found"),
+            Error::NotFound(r) => write!(f, "Resource not found: {}", r),
             Error::DatabaseError(e) => write!(f, "Database error: {}", e),
         }
     }

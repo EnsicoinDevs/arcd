@@ -55,7 +55,7 @@ impl Blockchain {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.stats.get("best_block")? {
                 Some(b) => (*b).to_owned(),
-                None => return Err(Error::NotFound),
+                None => return Err(Error::NotFound("best_block".to_string())),
             },
         ));
         Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
@@ -65,7 +65,7 @@ impl Blockchain {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.stats.get("genesis_block")? {
                 Some(b) => (*b).to_owned(),
-                None => return Err(Error::NotFound),
+                None => return Err(Error::NotFound("genesis_block".to_string())),
             },
         ));
         Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
@@ -76,7 +76,7 @@ impl Blockchain {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.stats.get("10_last")? {
                 Some(b) => (*b).to_owned(),
-                None => return Err(Error::NotFound),
+                None => return Err(Error::NotFound("10_last".to_string())),
             },
         ));
         let mut blocks: Vec<Sha256Result> = Vec::deserialize(&mut de)?;
@@ -92,7 +92,7 @@ impl Blockchain {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.stats.get("10_last")? {
                 Some(b) => (*b).to_owned(),
-                None => return Err(Error::NotFound),
+                None => return Err(Error::NotFound("10_last".to_string())),
             },
         ));
         let mut blocks: Vec<Sha256Result> = Vec::deserialize(&mut de)?;
@@ -110,6 +110,31 @@ impl Blockchain {
         self.database
             .contains_key(hash)
             .map_err(|e| Error::DatabaseError(e))
+    }
+
+    pub fn unknown_inv<'a>(
+        &self,
+        inv: ensicoin_messages::message::Inv,
+    ) -> Result<
+        (
+            Vec<ensicoin_messages::message::InvVect>,
+            Vec<ensicoin_messages::message::InvVect>,
+        ),
+        Error,
+    > {
+        let mut unknown = Vec::new();
+        let mut remaining = Vec::new();
+        for inv_vect in inv.inventory {
+            match inv_vect.data_type {
+                ensicoin_messages::message::ResourceType::Block => {
+                    if !self.exists(&inv_vect.hash)? {
+                        unknown.push(inv_vect);
+                    }
+                }
+                _ => remaining.push(inv_vect),
+            }
+        }
+        Ok((unknown, remaining))
     }
 
     pub fn find_last_common_block(
