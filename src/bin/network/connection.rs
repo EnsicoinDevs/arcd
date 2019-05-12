@@ -378,6 +378,7 @@ impl Connection {
             MessageType::NotFound => (),
             MessageType::Block => (),
             MessageType::GetBlocks => {}
+            MessageType::GetMempool => (),
             MessageType::Transaction => {
                 self.server_buffer
                     .push_back(ConnectionMessage::NewTransaction(

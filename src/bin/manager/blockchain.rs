@@ -61,6 +61,51 @@ impl Blockchain {
         Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
     }
 
+    pub fn genesis_hash(&self) -> Result<Sha256Result, Error> {
+        let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
+            match self.stats.get("genesis_block")? {
+                Some(b) => (*b).to_owned(),
+                None => return Err(Error::NotFound),
+            },
+        ));
+        Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
+    }
+
+    pub fn set_best_block(&self, hash: Sha256Result) -> Result<(), Error> {
+        self.stats.set("best_block", hash.serialize().to_vec())?;
+        let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
+            match self.stats.get("10_last")? {
+                Some(b) => (*b).to_owned(),
+                None => return Err(Error::NotFound),
+            },
+        ));
+        let mut blocks: Vec<Sha256Result> = Vec::deserialize(&mut de)?;
+        blocks.push(hash);
+        if blocks.len() > 10 {
+            blocks = blocks.split_off(1);
+        }
+        self.stats.set("10_last", blocks.serialize().to_vec())?;
+        Ok(())
+    }
+
+    pub fn generate_get_blocks(&self) -> Result<ensicoin_messages::message::GetBlocks, Error> {
+        let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
+            match self.stats.get("10_last")? {
+                Some(b) => (*b).to_owned(),
+                None => return Err(Error::NotFound),
+            },
+        ));
+        let mut blocks: Vec<Sha256Result> = Vec::deserialize(&mut de)?;
+        blocks.reverse();
+        if blocks.len() > 10 {
+            blocks.push(self.genesis_hash()?);
+        };
+        Ok(ensicoin_messages::message::GetBlocks {
+            stop_hash: Sha256Result::from([0 as u8; 32]),
+            block_locator: blocks,
+        })
+    }
+
     pub fn exists(&self, hash: &ensicoin_serializer::Sha256Result) -> Result<bool, Error> {
         self.database
             .contains_key(hash)
@@ -122,6 +167,7 @@ impl Blockchain {
         self.database.set(hash, raw_block.clone())?;
         self.reverse_chain.set(block.header.prev_block, raw_block)?;
         self.spent_tx.set(hash, spent_tx)?;
+        self.set_best_block(hash.clone())?;
         Ok(())
     }
 }

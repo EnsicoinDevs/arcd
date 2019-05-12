@@ -1,7 +1,7 @@
-use crate::constants::Sha256Result;
 use crate::data::linkedtx::{Dependency, DependencyType, LinkedTransaction};
 use crate::data::UtxoData;
 use ensicoin_messages::resource::Outpoint;
+use ensicoin_serializer::Sha256Result;
 use std::collections::HashMap;
 
 type Dep = (Sha256Result, Outpoint);

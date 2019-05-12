@@ -7,7 +7,7 @@ extern crate serde_json;
 extern crate sled;
 #[macro_use]
 extern crate lazy_static;
-use ensicoin_serializer::Sha256Result;
+use ensicoin_serializer::{Serialize, Sha256Result};
 
 use clap::{App, Arg, SubCommand};
 use std::fs;
@@ -43,6 +43,8 @@ fn build_cli() -> App<'static, 'static> {
                 .long("port")
                 .help("Set the listening port").takes_value(true)
                 .validator(is_port),
+        ).arg(
+            Arg::with_name("clean").long("clean").help("Cleans a previous install at the location")
         )
         .arg(
             Arg::with_name("prompt_port")
@@ -88,8 +90,49 @@ fn build_cli() -> App<'static, 'static> {
 
 fn bootstrap(args: clap::ArgMatches) {
     let data_dir = args.value_of("datadir").unwrap();
+
     let mut settings = std::path::PathBuf::from(data_dir);
     settings.push("settings.json");
+
+    let mut blockchain_dir = std::path::PathBuf::new();
+    blockchain_dir.push(data_dir);
+    blockchain_dir.push("blockchain");
+
+    if args.is_present("clean") {
+        let mut utxo_dir = std::path::PathBuf::new();
+        utxo_dir.push(data_dir);
+        utxo_dir.push("utxo");
+
+        let mut rev_dir = std::path::PathBuf::new();
+        rev_dir.push(data_dir);
+        rev_dir.push("reverse_chain");
+
+        let mut spent_tx_dir = std::path::PathBuf::new();
+        spent_tx_dir.push(data_dir);
+        spent_tx_dir.push("spent_tx");
+
+        let mut stats_dir = std::path::PathBuf::new();
+        stats_dir.push(data_dir);
+        stats_dir.push("stats");
+
+        match std::fs::remove_dir_all(utxo_dir)
+            .and(std::fs::remove_dir_all(rev_dir))
+            .and(std::fs::remove_dir_all(spent_tx_dir))
+            .and(std::fs::remove_dir_all(stats_dir))
+            .and(std::fs::remove_dir_all(blockchain_dir.clone()))
+            .and(std::fs::remove_file(settings.clone()))
+        {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Can't clean data_dir: {}", e);
+                return;
+            }
+        };
+    };
+    if settings.is_file() {
+        eprintln!("Can't bootstrap there, already setup");
+        return;
+    };
     let settings = match fs::File::create(settings) {
         Ok(f) => f,
         Err(e) => {
@@ -125,10 +168,31 @@ fn bootstrap(args: clap::ArgMatches) {
             timestamp: 1566862920,
             nonce: 42,
             height: 0,
-            bits: 1,
+            bits: 0x1e00f000,
         },
         txs: Vec::new(),
     };
+    let genesis_hash = genesis
+        .double_hash()
+        .iter()
+        .map(|b| format!("{:x}", b))
+        .fold(String::new(), |mut acc, mut v| {
+            acc.push_str(&mut v);
+            acc
+        });
+    println!("Genesis hash: {}", &genesis_hash);
+    println!("Genesis header: {:?}", genesis.header.serialize().to_vec());
+    let blockchain_db = match sled::Db::start_default(blockchain_dir) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("Can't open blockchain database: {}", e);
+            return;
+        }
+    };
+    if let Err(e) = blockchain_db.set(genesis.double_hash().to_vec(), genesis.serialize().to_vec())
+    {
+        eprintln!("Could not insert genesis block: {}", e);
+    }
 }
 
 fn main() {

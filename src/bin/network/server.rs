@@ -26,6 +26,7 @@ pub struct Server {
     mempool: Arc<RwLock<Mempool>>,
     collection_count: u64,
     max_connections_count: u64,
+    sync_counter: u64,
 }
 
 impl futures::Future for Server {
@@ -133,6 +134,7 @@ impl Server {
             blockchain: Arc::new(RwLock::new(Blockchain::new(data_dir))),
             mempool: Arc::new(RwLock::new(Mempool::new())),
             connection_buffer: std::collections::VecDeque::new(),
+            sync_counter: 3,
         };
         info!("Node created");
         let rpc = RPCNode::new(
@@ -156,6 +158,9 @@ impl Server {
             ConnectionMessage::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
                     info!("Registered [{}]", &host);
+                    if self.sync_counter > 0 {
+                        self.sync_counter -= 1;
+                    };
                     self.connections.insert(host, sender);
                     self.collection_count += 1;
                 } else {
