@@ -7,23 +7,23 @@ pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
     settings.push("settings.json");
 
     let mut blockchain_dir = std::path::PathBuf::new();
-    blockchain_dir.push(data_dir);
+    blockchain_dir.push(data_dir.clone());
     blockchain_dir.push("blockchain");
 
     let mut utxo_dir = std::path::PathBuf::new();
-    utxo_dir.push(data_dir);
+    utxo_dir.push(data_dir.clone());
     utxo_dir.push("utxo");
 
     let mut rev_dir = std::path::PathBuf::new();
-    rev_dir.push(data_dir);
+    rev_dir.push(data_dir.clone());
     rev_dir.push("reverse_chain");
 
     let mut spent_tx_dir = std::path::PathBuf::new();
-    spent_tx_dir.push(data_dir);
+    spent_tx_dir.push(data_dir.clone());
     spent_tx_dir.push("spent_tx");
 
     let mut stats_dir = std::path::PathBuf::new();
-    stats_dir.push(data_dir);
+    stats_dir.push(data_dir.clone());
     stats_dir.push("stats");
 
     match std::fs::remove_dir_all(utxo_dir)
@@ -58,7 +58,7 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         }
     };
 
-    let mut defaults: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let defaults: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     serde_json::to_writer(settings, &defaults).unwrap();
 
     let genesis = ensicoin_messages::resource::Block {
@@ -84,16 +84,45 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         });
     println!("Welcome to ensicoin ! Setting up the DB and storing settings");
     println!("Genesis hash: {}", &genesis_hash);
-    println!("Genesis header: {:?}", genesis.header.serialize().to_vec());
     let blockchain_db = match sled::Db::start_default(blockchain_dir) {
         Ok(db) => db,
         Err(e) => {
             return Err(format!("Can't open blockchain database: {}", e));
         }
     };
-    if let Err(e) = blockchain_db.set(genesis.double_hash().to_vec(), genesis.serialize().to_vec())
-    {
-        return Err(format!("Could not insert genesis block: {}", e));
+    let stats_db = match sled::Db::start_default(stats_dir) {
+        Ok(db) => db,
+        Err(e) => {
+            return Err(format!("Can't open blockchain database: {}", e));
+        }
     };
+    if let Err(e) = blockchain_db.set(
+        genesis.double_hash().serialize().to_vec(),
+        genesis.serialize().to_vec(),
+    ) {
+        return Err(format!(
+            "Could not insert genesis block in blockchain: {}",
+            e
+        ));
+    };
+
+    if let Err(e) = stats_db.set("genesis_block", genesis.double_hash().serialize().to_vec()) {
+        return Err(format!("Could not insert genesis hash in stats: {}", e));
+    };
+
+    if let Err(e) = stats_db.set("best_block", genesis.double_hash().serialize().to_vec()) {
+        return Err(format!(
+            "Could not insert genesis hash in best_block stats: {}",
+            e
+        ));
+    };
+
+    if let Err(e) = stats_db.set("10_last", vec![genesis.double_hash()].serialize().to_vec()) {
+        return Err(format!(
+            "Could not insert genesis hash in best_block stats: {}",
+            e
+        ));
+    };
+
     Ok(())
 }

@@ -88,11 +88,19 @@ fn main() {
                     if e.kind() == std::io::ErrorKind::NotFound {
                         if let Err(e) = bootstrap::bootstrap(&data_dir) {
                             eprintln!("Error bootstraping: {}", e);
+                            return;
+                        };
+                        match std::fs::File::open(settings_path.clone()) {
+                            Ok(f) => f,
+                            Err(e) => {
+                                eprintln!("Can't read settings just created: {}", e);
+                                return;
+                            }
                         }
                     } else {
                         eprintln!("Cannot read settings file: {}", e);
+                        return;
                     }
-                    return;
                 }
             };
             let mut defaults: std::collections::HashMap<String, String> =
