@@ -10,8 +10,6 @@ The common ensicoin data types are defined in [ensicoin-messages](https://github
 
 ## Usage
 
-You first need to bootstrap the blockchain using `arc-bootstrap`. You can specify this utility some parameters that will be used by the daemon.
-
 You can then launch `another-rust-coind`, the daemon. You can connect `arc-prompt` to the daemon to drive some actions.
 
 Using `-h` on any utility will give the detailed list of all options.
