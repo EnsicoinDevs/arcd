@@ -1,3 +1,4 @@
+mod bootstrap;
 mod cli;
 mod constants;
 mod data;
@@ -73,19 +74,24 @@ fn main() {
             );
         }
         ("", _) => {
+            if matches.is_present("clean") {
+                if let Err(e) = bootstrap::clean(data_dir.clone()) {
+                    eprintln!("Could not clean directory: {}", e);
+                    return;
+                }
+            };
             let mut settings_path = data_dir.clone();
             settings_path.push("settings.json");
             let settings = match std::fs::File::open(settings_path.clone()) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!(
-                        "Error: {}",
-                        if e.kind() == std::io::ErrorKind::NotFound {
-                            "node not bootstraped, please run arc-bootstrap".to_string()
-                        } else {
-                            format!("{}", e)
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        if let Err(e) = bootstrap::bootstrap(&data_dir) {
+                            eprintln!("Error bootstraping: {}", e);
                         }
-                    );
+                    } else {
+                        eprintln!("Cannot read settings file: {}", e);
+                    }
                     return;
                 }
             };

@@ -43,6 +43,11 @@ pub fn build_cli() -> App<'static, 'static> {
                 .help("Save command line arguments as new settings"),
         )
         .arg(
+            Arg::with_name("clean")
+                .long("clean")
+                .help("Cleans the data directory of any previous excecution"),
+        )
+        .arg(
             Arg::with_name("verbose")
                 .short("v")
                 .long("verbose")
