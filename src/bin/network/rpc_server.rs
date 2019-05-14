@@ -1,18 +1,12 @@
 pub mod node {
-    include!(concat!(env!("OUT_DIR"), "/ensicoin_rpc.node.rs"));
-}
-
-pub mod rpc_types {
     include!(concat!(env!("OUT_DIR"), "/ensicoin_rpc.rs"));
 }
 
-pub use rpc_types::{Block, BlockTemplate, Tx};
-
 use node::{
-    server, GetBestBlockHashReply, GetBestBlockHashRequest, GetBlockByHashReply,
-    GetBlockByHashRequest, GetBlockTemplateReply, GetBlockTemplateRequest, GetInfoReply,
-    GetInfoRequest, GetTxByHashReply, GetTxByHashRequest, PublishRawBlockReply,
-    PublishRawBlockRequest, PublishRawTxReply, PublishRawTxRequest,
+    server, Block, BlockTemplate, GetBlockByHashReply, GetBlockByHashRequest,
+    GetBlockTemplateReply, GetBlockTemplateRequest, GetInfoReply, GetInfoRequest, GetTxByHashReply,
+    GetTxByHashRequest, PublishRawBlockReply, PublishRawBlockRequest, PublishRawTxReply,
+    PublishRawTxRequest, Tx,
 };
 
 use crate::constants::{IMPLEMENTATION, VERSION};
@@ -101,6 +95,10 @@ impl node::server::Node for RPCNode {
         let response = Response::new(GetInfoReply {
             implementation: IMPLEMENTATION.to_string(),
             protocol_version: VERSION,
+            best_block_hash: match self.state.blockchain.read().unwrap().best_block_hash() {
+                Ok(a) => a.to_vec(),
+                Err(_) => Vec::new(),
+            },
         });
         future::ok(response)
     }
@@ -201,15 +199,6 @@ impl node::server::Node for RPCNode {
         &mut self,
         request: Request<GetBlockTemplateRequest>,
     ) -> Self::GetBlockTemplateFuture {
-        unimplemented!()
-    }
-
-    type GetBestBlockHashFuture =
-        future::FutureResult<Response<GetBestBlockHashReply>, tower_grpc::Status>;
-    fn get_best_block_hash(
-        &mut self,
-        request: Request<GetBestBlockHashRequest>,
-    ) -> Self::GetBestBlockHashFuture {
         unimplemented!()
     }
 

@@ -83,8 +83,22 @@ impl Mempool {
         self.link(&mut linked_tx);
         let hash = linked_tx.transaction.double_hash();
         if linked_tx.is_complete() {
-            self.pool.insert(hash, linked_tx);
-            self.added_parent_to_pool(hash);
+            if linked_tx.is_valid().unwrap() {
+                self.pool.insert(hash, linked_tx);
+                self.added_parent_to_pool(hash);
+            } else {
+                warn!(
+                    "Invalid tx processed: {}",
+                    linked_tx
+                        .transaction
+                        .double_hash()
+                        .iter()
+                        .fold(String::new(), |mut acc, b| {
+                            acc.push_str(&format!("{:x}", b));
+                            acc
+                        })
+                );
+            }
         } else {
             self.orphan.insert(hash, linked_tx);
         }
