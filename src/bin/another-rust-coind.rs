@@ -37,6 +37,7 @@ extern crate ensicoin_serializer_derive;
 extern crate ensicoin_messages;
 
 extern crate generic_array;
+extern crate num_bigint;
 extern crate ripemd160;
 extern crate secp256k1;
 extern crate sha2;

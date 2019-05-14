@@ -1,5 +1,6 @@
 use ensicoin_serializer::{Serialize, Sha256Result};
 
+use num_bigint::BigUint;
 use std::fs;
 
 pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
@@ -70,7 +71,9 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
             timestamp: 1566862920,
             nonce: 42,
             height: 0,
-            bits: 0x1e00f000,
+            target: Sha256Result::clone_from_slice(
+                &(BigUint::from_bytes_be(&[0x00, 0xf0, 0x00]) << 0x1e).to_bytes_be(),
+            ),
         },
         txs: Vec::new(),
     };
