@@ -1,8 +1,12 @@
+use crate::data::validation::SanityCheck;
 use crate::data::UtxoData;
 use ensicoin_messages::resource::Outpoint;
 use ensicoin_messages::resource::Transaction;
+use ensicoin_serializer::Serialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
+
+use sha2::Digest;
 
 #[derive(PartialEq, Eq)]
 pub struct Dependency {
@@ -86,6 +90,59 @@ impl LinkedTransaction {
 
     pub fn is_complete(&self) -> bool {
         self.dep_count == self.input_count
+    }
+    pub fn is_valid(&self) -> Result<bool, ()> {
+        if !self.transaction.sanity_check() {
+            return Ok(false);
+        };
+
+        let mut hasher_outpoints = sha2::Sha256::default();
+        for input in &self.transaction.inputs {
+            hasher_outpoints.input(input.previous_output.serialize());
+        }
+        let hash = hasher_outpoints.result();
+        let mut hasher_outpoints = sha2::Sha256::default();
+        hasher_outpoints.input(hash);
+
+        let hash_outpoints = hasher_outpoints.result();
+
+        let mut hasher_outputs = sha2::Sha256::default();
+        for output in &self.transaction.outputs {
+            hasher_outputs.input(output.serialize());
+        }
+        let hash_outputs = hasher_outputs.result();
+
+        for input in &self.transaction.inputs {
+            let mut script = input.script.clone();
+            script.append(&mut match self.dependencies.get(&input.previous_output) {
+                Some(dep) => dep.data.script.clone(),
+                _ => return Err(()),
+            });
+            let mut hasher = sha2::Sha256::default();
+            hasher.input(self.transaction.version.serialize());
+            hasher.input(self.transaction.flags.serialize());
+            hasher.input(&hash_outpoints);
+            hasher.input(input.previous_output.serialize());
+            hasher.input(match self.dependencies.get(&input.previous_output) {
+                Some(dep) => dep.data.value.serialize(),
+                _ => return Err(()),
+            });
+            hasher.input(&hash_outputs);
+
+            if !crate::data::script_vm::execute_script(script, hasher.result()) {
+                return Ok(false);
+            }
+        }
+
+        let mut output_sum = 0;
+        for output in &self.transaction.outputs {
+            output_sum += output.value;
+        }
+        let mut input_sum = 0;
+        for (_, input) in &self.dependencies {
+            input_sum += input.data.value
+        }
+        Ok(input_sum < output_sum)
     }
 
     pub fn is_publishable(&self) -> bool {
