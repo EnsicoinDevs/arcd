@@ -2,8 +2,8 @@ use crate::data::linkedtx::LinkedTransaction;
 use ensicoin_messages::resource::{Block, BlockHeader};
 
 pub struct LinkedBlock {
-    header: BlockHeader,
-    txs: Vec<LinkedTransaction>,
+    pub header: BlockHeader,
+    pub txs: Vec<LinkedTransaction>,
 }
 
 impl LinkedBlock {
@@ -17,5 +17,18 @@ impl LinkedBlock {
                 .map(|tx| LinkedTransaction::new(tx))
                 .collect(),
         }
+    }
+    pub fn is_valid(&self) -> bool {
+        // TODO: Get the target
+        for tx in &self.txs[1..] {
+            if !tx.is_complete() {
+                return false;
+            }
+            match tx.is_valid() {
+                Ok(true) => (),
+                _ => return false,
+            }
+        }
+        return true;
     }
 }

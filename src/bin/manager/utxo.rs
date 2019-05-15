@@ -99,4 +99,6 @@ impl UtxoManager {
             }
         }
     }
+
+    pub fn link_block(&self, linkedblock: &mut crate::data::linkedblock::LinkedBlock) {}
 }
