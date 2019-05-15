@@ -4,9 +4,7 @@ use tokio::net::TcpListener;
 use tokio::prelude::*;
 use tokio_bus::Bus;
 
-use crate::data::intern_messages::{
-    BroadcastMessage, ConnectionMessage, PromptMessage, ServerMessage,
-};
+use crate::data::intern_messages::{BroadcastMessage, ConnectionMessage, ServerMessage};
 use crate::data::linkedtx::LinkedTransaction;
 use crate::manager::{Blockchain, Mempool, UtxoManager};
 use crate::network::Connection;
@@ -18,7 +16,7 @@ const CHANNEL_CAPACITY: usize = 1_024;
 
 pub struct Server {
     broadcast_channel: Arc<Bus<BroadcastMessage>>,
-    connection_receiver: FullMessageStreamWithPrompt,
+    connection_receiver: FullMessageStream,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
@@ -60,11 +58,6 @@ impl futures::Future for Server {
     }
 }
 
-fn new_prompt_stream(socket: tokio::net::TcpStream) -> ConnectionMessage {
-    trace!("Prompt connection");
-    ConnectionMessage::NewPrompt(socket)
-}
-
 fn new_socket_converter(socket: tokio::net::TcpStream) -> ConnectionMessage {
     trace!(
         "Connection picked up: {}",
@@ -89,8 +82,6 @@ type ServerMessageErrored = futures::stream::MapErr<
     ChannelErrorConverter,
 >;
 type FullMessageStream = futures::stream::Select<ServerMessageErrored, NewConnectionStreamErrored>;
-type FullMessageStreamWithPrompt =
-    futures::stream::Select<FullMessageStream, NewConnectionStreamErrored>;
 
 impl Server {
     fn send(&mut self, dest: String, msg: crate::data::intern_messages::ServerMessage) {
@@ -101,7 +92,6 @@ impl Server {
         max_conn: u64,
         data_dir: &std::path::Path,
         port: u16,
-        prompt_port: u16,
         grpc_port: u16,
         grpc_localhost: bool,
     ) {
@@ -117,16 +107,6 @@ impl Server {
         let message_stream = receiver
             .map_err(channel_errore_converter as ChannelErrorConverter)
             .select(inbound_connection_stream);
-        let prompt_listener = TcpListener::bind(&std::net::SocketAddr::new(
-            "127.0.0.1".parse().unwrap(),
-            prompt_port,
-        ))
-        .unwrap();
-        let prompt_stream = prompt_listener
-            .incoming()
-            .map(new_prompt_stream as NewSocketConverter)
-            .map_err(io_error_converter as IoErrorConverter);
-        let message_stream = message_stream.select(prompt_stream);
 
         let server = Server {
             broadcast_channel: Arc::new(Bus::new(30)),
@@ -253,39 +233,6 @@ impl Server {
                 trace!("new connection");
                 tokio::spawn(new_conn);
             }
-            ConnectionMessage::NewPrompt(socket) => {
-                let length_delimited = tokio::codec::FramedRead::new(
-                    socket,
-                    tokio::codec::LengthDelimitedCodec::new(),
-                );
-                let deserialized: tokio_serde_json::ReadJson<_, PromptMessage> =
-                    tokio_serde_json::ReadJson::new(length_delimited);
-                let sender = self.connection_sender.clone();
-                let deserialized_handled = deserialized
-                    .map_err(|e| println!("Error in prompt: {:?}", e))
-                    .for_each(move |message| {
-                        match message {
-                            PromptMessage::Connect(addr) => {
-                                tokio::spawn(
-                                    sender
-                                        .clone()
-                                        .send(ConnectionMessage::Connect(addr))
-                                        .map_err(|_| ())
-                                        .map(|_| ()),
-                                );
-                            }
-                            m => trace!(
-                                "prompt message: {}",
-                                serde_json::to_string_pretty(&m).unwrap()
-                            ),
-                        };
-                        Ok(())
-                    });
-                tokio::spawn(deserialized_handled);
-            }
         }
-    }
-    pub fn get_sender(&self) -> mpsc::Sender<ConnectionMessage> {
-        self.connection_sender.clone()
     }
 }

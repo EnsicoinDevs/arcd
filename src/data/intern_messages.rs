@@ -21,7 +21,6 @@ pub enum ConnectionMessage {
     NewTransaction(Transaction, Source),
     NewBlock(Block, Source),
     Connect(std::net::SocketAddr),
-    NewPrompt(tokio::net::TcpStream),
     NewConnection(tokio::net::TcpStream),
     Register(mpsc::Sender<ServerMessage>, String),
 }
@@ -49,19 +48,11 @@ impl std::fmt::Display for ConnectionMessage {
                 ConnectionMessage::Connect(_) => "Connect",
                 ConnectionMessage::NewConnection(_) => "NewConnection",
                 ConnectionMessage::Register(_, _) => "Register",
-                ConnectionMessage::NewPrompt(_) => "NewPrompt",
                 ConnectionMessage::NewBlock(_, _) => "NewBlock",
                 ConnectionMessage::Clean(_) => "Clean",
             }
         )
     }
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-pub enum PromptMessage {
-    Connect(std::net::SocketAddr),
-    Transaction(Transaction),
-    Disconnect,
 }
 
 #[derive(Clone)]

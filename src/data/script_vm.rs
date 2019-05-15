@@ -6,7 +6,6 @@ use secp256k1::{Message, PublicKey, Secp256k1, Signature};
 
 pub fn execute_script(code: Vec<OP>, shash: Sha256Result) -> bool {
     let mut stack: Vec<Vec<u8>> = Vec::new();
-    let vec_shash = shash.to_vec();
     let mut i: usize = 0;
     while i < code.len() {
         match code[i] {

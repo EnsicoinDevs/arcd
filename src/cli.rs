@@ -1,4 +1,3 @@
-use crate::constants::{DEFAULT_PORT, DEFAULT_PROMPT, IP};
 use clap::{App, Arg, SubCommand};
 
 fn is_port(v: String) -> Result<(), String> {
@@ -13,14 +12,6 @@ fn is_port(v: String) -> Result<(), String> {
 fn is_u64(v: String) -> Result<(), String> {
     let n: Result<u64, std::num::ParseIntError> = v.parse();
     match n {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-fn is_ip(v: String) -> Result<(), String> {
-    let ip: Result<std::net::IpAddr, std::net::AddrParseError> = v.parse();
-    match ip {
         Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
@@ -59,13 +50,6 @@ pub fn build_cli() -> App<'static, 'static> {
                 .long("error")
                 .help("Suppress all output execpt error")
                 .conflicts_with("verbose"),
-        )
-        .arg(
-            Arg::with_name("port")
-                .short("p")
-                .long("port")
-                .help("Set the listening port")
-                .validator(is_port),
         )
         .arg(
             Arg::with_name("prompt_port")

@@ -5,7 +5,6 @@ mod data;
 mod error;
 mod manager;
 mod network;
-pub use cli::daemoncli;
 pub use error::Error;
 
 use network::Server;
@@ -13,7 +12,7 @@ use network::Server;
 extern crate bytes;
 
 extern crate serde;
-extern crate tokio_serde_json;
+extern crate serde_json;
 
 extern crate futures;
 extern crate tokio;
@@ -32,9 +31,9 @@ extern crate dirs;
 extern crate sled;
 
 extern crate ensicoin_serializer;
-#[macro_use]
-extern crate ensicoin_serializer_derive;
+//#[macro_use]
 extern crate ensicoin_messages;
+extern crate ensicoin_serializer_derive;
 
 extern crate generic_array;
 extern crate num_bigint;
@@ -51,7 +50,7 @@ extern crate tokio_bus;
 use std::io;
 
 fn main() {
-    let matches = daemoncli::build_cli().get_matches();
+    let matches = cli::build_cli().get_matches();
 
     let log_level = if matches.is_present("verbose") {
         simplelog::LevelFilter::Trace
@@ -68,7 +67,7 @@ fn main() {
     match matches.subcommand() {
         ("completions", Some(sub_matches)) => {
             let shell = sub_matches.value_of("SHELL").unwrap();
-            daemoncli::build_cli().gen_completions_to(
+            cli::build_cli().gen_completions_to(
                 "another-rust-coin",
                 shell.parse().unwrap(),
                 &mut io::stdout(),
@@ -121,19 +120,6 @@ fn main() {
             }
             .parse()
             .unwrap();
-            let prompt_port = if matches.is_present("prompt_port") {
-                let val = matches.value_of("prompt_port").unwrap();
-                if save {
-                    defaults.insert(String::from("prompt_port"), String::from(val));
-                };
-                val
-            } else if defaults.contains_key("prompt_port") {
-                defaults.get("prompt_port").unwrap()
-            } else {
-                constants::DEFAULT_PROMPT
-            }
-            .parse()
-            .unwrap();
             let grpc_port = if matches.is_present("grpc_port") {
                 let val = matches.value_of("grpc_port").unwrap();
                 if save {
@@ -172,14 +158,7 @@ fn main() {
                 };
                 serde_json::to_writer(settings, &defaults).unwrap();
             }
-            Server::run(
-                max_conn,
-                &data_dir,
-                listen_port,
-                prompt_port,
-                grpc_port,
-                grpc_localhost,
-            );
+            Server::run(max_conn, &data_dir, listen_port, grpc_port, grpc_localhost);
         }
         (_, _) => (),
     };
