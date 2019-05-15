@@ -231,10 +231,10 @@ impl futures::Future for Terminator {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.sender.start_send(ConnectionMessage::Disconnect(
-            self.error.take().unwrap(),
-            String::from(self.remote.clone()),
-        )) {
+        match self
+            .sender
+            .start_send(ConnectionMessage::Clean(String::from(self.remote.clone())))
+        {
             Ok(AsyncSink::NotReady(_)) => return Ok(Async::NotReady),
             Ok(AsyncSink::Ready) => self.staged = true,
             Err(e) => panic!("Can't terminate: {}", e),

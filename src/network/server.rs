@@ -191,11 +191,16 @@ impl Server {
                     );
                 }
             }
-            ConnectionMessage::Disconnect(e, host) => {
+            ConnectionMessage::Clean(host) => {
                 if let Some(_) = self.connections.remove(&host) {
                     self.collection_count -= 1;
                 };
-                warn!("Deleted Connection [{}] because of: ({})", host, e);
+                trace!("Cleaned connection [{}] because", host);
+            }
+            ConnectionMessage::Disconnect(e, host) => {
+                if self.connections.contains_key(&host) {
+                    self.send(host, ServerMessage::Terminate(e));
+                }
             }
             ConnectionMessage::CheckInv(inv, source) => {
                 let (unknown_blocks, _txs) =

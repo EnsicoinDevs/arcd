@@ -3,10 +3,10 @@ pub mod node {
 }
 
 use node::{
-    server, Block, BlockTemplate, GetBlockByHashReply, GetBlockByHashRequest,
-    GetBlockTemplateReply, GetBlockTemplateRequest, GetInfoReply, GetInfoRequest, GetTxByHashReply,
-    GetTxByHashRequest, PublishRawBlockReply, PublishRawBlockRequest, PublishRawTxReply,
-    PublishRawTxRequest, Tx,
+    server, Block, BlockTemplate, ConnectPeerReply, ConnectPeerRequest, DisconnectPeerReply,
+    DisconnectPeerRequest, GetBlockByHashReply, GetBlockByHashRequest, GetBlockTemplateReply,
+    GetBlockTemplateRequest, GetInfoReply, GetInfoRequest, GetTxByHashReply, GetTxByHashRequest,
+    PublishRawBlockReply, PublishRawBlockRequest, PublishRawTxReply, PublishRawTxRequest, Tx,
 };
 
 use crate::constants::{IMPLEMENTATION, VERSION};
@@ -200,6 +200,94 @@ impl node::server::Node for RPCNode {
         request: Request<GetBlockTemplateRequest>,
     ) -> Self::GetBlockTemplateFuture {
         unimplemented!()
+    }
+
+    type ConnectPeerFuture = future::FutureResult<Response<ConnectPeerReply>, tower_grpc::Status>;
+    fn connect_peer(&mut self, request: Request<ConnectPeerRequest>) -> Self::ConnectPeerFuture {
+        let sender = self.state.clone().server_sender.clone();
+        let inner = request.into_inner();
+        let peer = match inner.peer {
+            Some(p) => p,
+            None => {
+                return future::result(Err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    "no peer provided".to_string(),
+                )))
+            }
+        };
+        let address = match peer.address {
+            Some(a) => a,
+            None => {
+                return future::result(Err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    "no address in peer provided".to_string(),
+                )))
+            }
+        };
+        let address = match format!("{}:{}", address.ip, address.port).parse() {
+            Ok(a) => a,
+            Err(e) => {
+                return future::FutureResult::from(Err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    format!("{:?}", e),
+                )))
+            }
+        };
+        tokio::spawn(
+            sender
+                .clone()
+                .send(ConnectionMessage::Connect(address))
+                .map_err(|e| warn!("[grpc] can't contact server: {}", e))
+                .map(|_| ()),
+        );
+        future::ok(tower_grpc::Response::new(ConnectPeerReply {}))
+    }
+    type DisconnectPeerFuture =
+        future::FutureResult<Response<DisconnectPeerReply>, tower_grpc::Status>;
+    fn disconnect_peer(
+        &mut self,
+        request: Request<DisconnectPeerRequest>,
+    ) -> Self::DisconnectPeerFuture {
+        let sender = self.state.clone().server_sender.clone();
+        let inner = request.into_inner();
+        let peer = match inner.peer {
+            Some(p) => p,
+            None => {
+                return future::result(Err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    "no peer provided".to_string(),
+                )))
+            }
+        };
+        let address = match peer.address {
+            Some(a) => a,
+            None => {
+                return future::result(Err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    "no address in peer provided".to_string(),
+                )))
+            }
+        };
+        let address = match format!("{}:{}", address.ip, address.port).parse() {
+            Ok(a) => a,
+            Err(e) => {
+                return future::FutureResult::from(Err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    format!("{:?}", e),
+                )))
+            }
+        };
+        tokio::spawn(
+            sender
+                .clone()
+                .send(ConnectionMessage::Disconnect(
+                    crate::Error::ServerTermination,
+                    address,
+                ))
+                .map_err(|e| warn!("[grpc] can't contact server: {}", e))
+                .map(|_| ()),
+        );
+        future::ok(tower_grpc::Response::new(DisconnectPeerReply {}))
     }
 
     type GetBlockByHashFuture =

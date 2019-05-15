@@ -14,6 +14,7 @@ pub enum Source {
 /// Messages sent to the server by the connections for example
 pub enum ConnectionMessage {
     Disconnect(Error, String),
+    Clean(String),
     CheckInv(Inv, Source),
     Retrieve(GetData, Source),
     SyncBlocks(GetBlocks, Source),
@@ -50,6 +51,7 @@ impl std::fmt::Display for ConnectionMessage {
                 ConnectionMessage::Register(_, _) => "Register",
                 ConnectionMessage::NewPrompt(_) => "NewPrompt",
                 ConnectionMessage::NewBlock(_, _) => "NewBlock",
+                ConnectionMessage::Clean(_) => "Clean",
             }
         )
     }
