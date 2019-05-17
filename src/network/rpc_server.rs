@@ -91,7 +91,7 @@ impl node::server::Node for RPCNode {
     type GetInfoFuture = future::FutureResult<Response<GetInfoReply>, tower_grpc::Status>;
 
     fn get_info(&mut self, _request: Request<GetInfoRequest>) -> Self::GetInfoFuture {
-        info!("[grpc] GetInfo");
+        trace!("[grpc] GetInfo");
         let response = Response::new(GetInfoReply {
             implementation: IMPLEMENTATION.to_string(),
             protocol_version: VERSION,
@@ -233,6 +233,7 @@ impl node::server::Node for RPCNode {
                 )))
             }
         };
+        info!("[grpc] Connect to: {}", &address);
         tokio::spawn(
             sender
                 .clone()
@@ -277,6 +278,7 @@ impl node::server::Node for RPCNode {
                 )))
             }
         };
+        info!("[grpc] Disconnect from: {}", &address);
         tokio::spawn(
             sender
                 .clone()
