@@ -1,4 +1,4 @@
-# another-rust-coin
+# another-rust-coin daeamon
 [![](https://tokei.rs/b1/github/EnsicoinDevs/another-rust-coin)](https://github.com/EnsicoinDevs/another-rust-coin)
 [![Build Status](https://travis-ci.com/EnsicoinDevs/another-rust-coin.svg?branch=master)](https://travis-ci.com/EnsicoinDevs/another-rust-coin)
 
