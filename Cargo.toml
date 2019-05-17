@@ -1,5 +1,5 @@
 [package]
-name = "another-rust-coin"
+name = "arcd"
 version = "0.1.0"
 authors = ["Quentin Boyer <qbsecond@gmail.com>"]
 description = "A rust node implementing the ensicoin protocol"
