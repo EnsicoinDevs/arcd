@@ -18,6 +18,14 @@ impl LinkedBlock {
                 .collect(),
         }
     }
+    pub fn to_block(self) -> Block {
+        let header = self.header;
+        let txs = self.txs;
+        Block {
+            header: header,
+            txs: txs.into_iter().map(|txs| txs.transaction).collect(),
+        }
+    }
     pub fn is_valid(&self) -> bool {
         // TODO: Get the target
         for tx in &self.txs[1..] {

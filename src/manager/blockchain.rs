@@ -1,3 +1,4 @@
+use crate::data::linkedblock::LinkedBlock;
 use crate::Error;
 use ensicoin_messages::resource::Block;
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
@@ -7,6 +8,7 @@ pub struct Blockchain {
     database: sled::Db,
     reverse_chain: sled::Db,
     spent_tx: sled::Db,
+    past_block: sled::Db,
 }
 
 impl Blockchain {
@@ -31,11 +33,17 @@ impl Blockchain {
         stats_dir.push("stats");
         let stats = sled::Db::start_default(stats_dir).unwrap();
 
+        let mut past_dir = std::path::PathBuf::new();
+        past_dir.push(data_dir);
+        past_dir.push("past_block");
+        let past_block = sled::Db::start_default(past_dir).unwrap();
+
         Blockchain {
             stats,
             database,
             reverse_chain,
             spent_tx,
+            past_block,
         }
     }
 
@@ -184,9 +192,9 @@ impl Blockchain {
         Ok(inv)
     }
 
-    pub fn add_block(&mut self, block: &Block) -> Result<(), Error> {
-        let raw_block = block.serialize().to_vec();
-        let hash = block.double_hash();
+    pub fn add_block(&mut self, block: &LinkedBlock) -> Result<(), Error> {
+        let raw_block = block.header.serialize().to_vec();
+        let hash = block.header.double_hash();
         //let utxo = block.utxo().serialize().to_vec();
         let spent_tx = Vec::new();
         self.database.set(hash, raw_block.clone())?;
