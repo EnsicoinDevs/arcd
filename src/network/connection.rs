@@ -1,14 +1,17 @@
 use futures::sync::mpsc;
-use tokio::net::TcpStream;
-use tokio::prelude::*;
+use tokio::{net::TcpStream, prelude::*};
 
 use ensicoin_serializer::{Deserialize, Deserializer};
 
 use bytes::{Bytes, BytesMut};
 
-use crate::data::intern_messages::{self, ConnectionMessage, ServerMessage};
-use crate::data::MessageCodec;
-use crate::Error;
+use crate::{
+    data::{
+        intern_messages::{self, ConnectionMessage, ServerMessage},
+        MessageCodec,
+    },
+    Error,
+};
 use ensicoin_messages::{
     message::{self, GetBlocks, GetData, Inv, Message, MessageType, Ping, Whoami, WhoamiAck},
     resource::Transaction,

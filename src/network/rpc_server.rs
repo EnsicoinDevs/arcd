@@ -9,11 +9,11 @@ use node::{
     PublishRawBlockReply, PublishRawBlockRequest, PublishRawTxReply, PublishRawTxRequest, Tx,
 };
 
-use crate::constants::{IMPLEMENTATION, VERSION};
-use crate::data::intern_messages;
-use crate::data::intern_messages::BroadcastMessage;
-use crate::data::intern_messages::ConnectionMessage;
-use crate::manager::{Blockchain, Mempool};
+use crate::{
+    constants::{IMPLEMENTATION, VERSION},
+    data::intern_messages::{self, BroadcastMessage, ConnectionMessage},
+    manager::{Blockchain, Mempool},
+};
 use ensicoin_serializer::{Deserialize, Deserializer};
 use futures::{future, stream, Future, Sink, Stream};
 use std::sync::{Arc, RwLock};
@@ -70,7 +70,7 @@ impl RPCNode {
         let addr = format!("{}:{}", bind_address, port).parse().unwrap();
         let bind = TcpListener::bind(&addr).unwrap();
 
-        info!("Started gRPC server");
+        info!("Started gRPC server on port {}", port);
 
         let serve = bind
             .incoming()

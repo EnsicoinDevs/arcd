@@ -1,10 +1,7 @@
-use crate::data::validation::SanityCheck;
-use crate::data::UtxoData;
-use ensicoin_messages::resource::Outpoint;
-use ensicoin_messages::resource::Transaction;
+use crate::data::{validation::SanityCheck, UtxoData};
+use ensicoin_messages::resource::{Outpoint, Transaction};
 use ensicoin_serializer::Serialize;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use sha2::Digest;
 

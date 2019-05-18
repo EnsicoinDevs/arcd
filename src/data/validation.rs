@@ -1,5 +1,4 @@
-use ensicoin_messages::resource::Block;
-use ensicoin_messages::resource::Transaction;
+use ensicoin_messages::resource::{Block, Transaction};
 
 pub trait SanityCheck {
     fn sanity_check(&self) -> bool;

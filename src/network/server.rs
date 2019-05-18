@@ -1,15 +1,17 @@
 use ensicoin_messages::message::Message;
 use futures::sync::mpsc;
-use tokio::net::TcpListener;
-use tokio::prelude::*;
+use tokio::{net::TcpListener, prelude::*};
 use tokio_bus::Bus;
 
-use crate::data::intern_messages::{BroadcastMessage, ConnectionMessage, ServerMessage};
-use crate::data::linkedtx::LinkedTransaction;
-use crate::manager::{Blockchain, Mempool, UtxoManager};
-use crate::network::Connection;
-use crate::network::RPCNode;
-use crate::Error;
+use crate::{
+    data::{
+        intern_messages::{BroadcastMessage, ConnectionMessage, ServerMessage},
+        linkedtx::LinkedTransaction,
+    },
+    manager::{Blockchain, Mempool, UtxoManager},
+    network::{Connection, RPCNode},
+    Error,
+};
 use std::sync::{Arc, RwLock};
 
 const CHANNEL_CAPACITY: usize = 1_024;
@@ -121,7 +123,7 @@ impl Server {
             connection_buffer: std::collections::VecDeque::new(),
             sync_counter: 3,
         };
-        info!("Node created");
+        info!("Node created, listening on port {}", port);
         let rpc = RPCNode::new(
             server.broadcast_channel.clone(),
             server.mempool.clone(),

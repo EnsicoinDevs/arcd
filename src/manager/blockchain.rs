@@ -1,5 +1,4 @@
-use crate::data::linkedblock::LinkedBlock;
-use crate::Error;
+use crate::{data::linkedblock::LinkedBlock, Error};
 use ensicoin_messages::resource::Block;
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 

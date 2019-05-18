@@ -1,5 +1,7 @@
-use crate::data::linkedtx::{Dependency, DependencyType, LinkedTransaction};
-use crate::data::UtxoData;
+use crate::data::{
+    linkedtx::{Dependency, DependencyType, LinkedTransaction},
+    UtxoData,
+};
 use ensicoin_messages::resource::Outpoint;
 use ensicoin_serializer::Sha256Result;
 use std::collections::HashMap;
