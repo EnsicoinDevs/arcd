@@ -71,9 +71,10 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
             timestamp: 1566862920,
             nonce: 42,
             height: 0,
-            target: Sha256Result::clone_from_slice(
-                &(BigUint::from_bytes_be(&[0x00, 0xf0, 0x00]) << 0x1e).to_bytes_be(),
-            ),
+            target: Sha256Result::from([
+                0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+            ]),
         },
         txs: Vec::new(),
     };
