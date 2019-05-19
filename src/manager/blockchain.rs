@@ -3,7 +3,7 @@ use crate::{
     Error,
 };
 use ensicoin_messages::resource::{Block, Outpoint, Transaction};
-use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
+use ensicoin_serializer::{hash_to_string, Deserialize, Serialize, Sha256Result};
 use num_bigint::BigUint;
 
 pub struct Blockchain {
@@ -85,7 +85,7 @@ impl Blockchain {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.work.get(&hash.serialize())? {
                 Some(b) => (*b).to_owned(),
-                None => return Err(Error::NotFound(format!("work {:?}", hash))),
+                None => return Err(Error::NotFound(format!("work {}", hash_to_string(&hash)))),
             },
         ));
         Vec::deserialize(&mut de)
@@ -109,7 +109,12 @@ impl Blockchain {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.past_block.get(&hash.serialize())? {
                 Some(b) => (*b).to_owned(),
-                None => return Err(Error::NotFound(format!("2016 before {:?}", hash))),
+                None => {
+                    return Err(Error::NotFound(format!(
+                        "2016 before {}",
+                        hash_to_string(hash)
+                    )))
+                }
             },
         ));
         Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
@@ -373,7 +378,7 @@ impl Blockchain {
     pub fn pop_until(&mut self, hash: &Sha256Result) -> Result<PopContext, Error> {
         let until_block = match self.get_block(hash)? {
             Some(b) => b,
-            None => return Err(Error::NotFound(format!("block {:?}", hash))),
+            None => return Err(Error::NotFound(format!("block {}", hash_to_string(&hash)))),
         };
         let until_height = until_block.header.height;
         let mut utxo_to_restore = Vec::new();
@@ -408,7 +413,12 @@ impl Blockchain {
         while hash != *until {
             let block = match self.get_block(&hash)? {
                 Some(b) => b,
-                None => return Err(Error::NotFound(format!("prev of {:?}", hash))),
+                None => {
+                    return Err(Error::NotFound(format!(
+                        "prev of {}",
+                        hash_to_string(&hash)
+                    )))
+                }
             };
             blocks.push(hash);
             hash = block.header.prev_block;
@@ -422,7 +432,7 @@ impl Blockchain {
         for hash in chain {
             new_chain.push(match self.get_block(&hash)? {
                 Some(b) => b,
-                None => return Err(Error::NotFound(format!("block {:?}", hash))),
+                None => return Err(Error::NotFound(format!("block {}", hash_to_string(&hash)))),
             })
         }
         Ok(new_chain)
@@ -433,7 +443,12 @@ impl Blockchain {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.spent_tx.get(&best_block.serialize())? {
                 Some(b) => (*b).to_owned(),
-                None => return Err(Error::NotFound(format!("spent tx {:?}", best_block))),
+                None => {
+                    return Err(Error::NotFound(format!(
+                        "spent tx {}",
+                        hash_to_string(&best_block)
+                    )))
+                }
             },
         ));
         let best_block = self.get_block(&best_block)?.unwrap();
