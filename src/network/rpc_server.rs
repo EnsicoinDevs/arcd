@@ -145,91 +145,72 @@ impl node::server::Node for RPCNode {
         future::ok(response)
     }
 
-    type PublishRawTxFuture =
-        Box<Future<Item = Response<PublishRawTxReply>, Error = tower_grpc::Status> + Send>;
+    type PublishRawTxFuture = future::FutureResult<Response<PublishRawTxReply>, tower_grpc::Status>;
 
     fn publish_raw_tx(
         &mut self,
-        request: Request<Streaming<PublishRawTxRequest>>,
+        request: Request<PublishRawTxRequest>,
     ) -> Self::PublishRawTxFuture {
         info!("[grpc] PublishRawTx");
         let sender = self.state.server_sender.clone();
-        let response = request
-            .into_inner()
-            .map_err(|e| {
-                warn!("[grpc] error in PublishRawTx: {}", e);
-                e
-            })
-            //.zip(sender)
-            .for_each(move |raw_tx_msg| {
-                let mut de = Deserializer::new(bytes::BytesMut::from(raw_tx_msg.raw_tx));
-                let tx = match ensicoin_messages::resource::Transaction::deserialize(&mut de) {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        warn!("[grpc] Error reading tx: {}", e);
-                        return Err(tower_grpc::Status::new(
-                            tower_grpc::Code::InvalidArgument,
-                            format!("Error parsing: {}", e),
-                        ));
-                    }
-                };
-                tokio::spawn(
-                    sender
-                        .clone()
-                        .send(ConnectionMessage::NewTransaction(
-                            tx,
-                            intern_messages::Source::RPC,
-                        ))
-                        .map_err(|e| warn!("[grpc] can't contact server: {}", e))
-                        .map(|_| ()),
-                );
-                Ok(())
-            })
-            .map(|_| Response::new(PublishRawTxReply {}));
-        Box::new(response)
+        let raw_tx_msg = request.into_inner();
+
+        let mut de = Deserializer::new(bytes::BytesMut::from(raw_tx_msg.raw_tx));
+        let tx = match ensicoin_messages::resource::Transaction::deserialize(&mut de) {
+            Ok(tx) => tx,
+            Err(e) => {
+                warn!("[grpc] Error reading tx: {}", e);
+                return future::result(Err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    format!("Error parsing: {}", e),
+                )));
+            }
+        };
+        tokio::spawn(
+            sender
+                .clone()
+                .send(ConnectionMessage::NewTransaction(
+                    tx,
+                    intern_messages::Source::RPC,
+                ))
+                .map_err(|e| warn!("[grpc] can't contact server: {}", e))
+                .map(|_| ()),
+        );
+        future::ok(Response::new(PublishRawTxReply {}))
     }
 
     type PublishRawBlockFuture =
-        Box<Future<Item = Response<PublishRawBlockReply>, Error = tower_grpc::Status> + Send>;
+        future::FutureResult<Response<PublishRawBlockReply>, tower_grpc::Status>;
 
     fn publish_raw_block(
         &mut self,
-        request: Request<Streaming<PublishRawBlockRequest>>,
+        request: Request<PublishRawBlockRequest>,
     ) -> Self::PublishRawBlockFuture {
         info!("[grpc] PublishRawBlock");
         let sender = self.state.server_sender.clone();
-        let response = request
-            .into_inner()
-            .map_err(|e| {
-                warn!("[grpc] error in PublishRawBlock: {}", e);
-                e
-            })
-            .for_each(move |raw_blk_msg| {
-                let mut de = Deserializer::new(bytes::BytesMut::from(raw_blk_msg.raw_block));
-                let block = match ensicoin_messages::resource::Block::deserialize(&mut de) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        warn!("[grpc] Error reading block: {}", e);
-                        return Err(tower_grpc::Status::new(
-                            tower_grpc::Code::InvalidArgument,
-                            format!("Error parsing: {}", e),
-                        ));
-                    }
-                };
-                tokio::spawn(
-                    sender
-                        .clone()
-                        .send(ConnectionMessage::NewBlock(
-                            block,
-                            intern_messages::Source::RPC,
-                        ))
-                        .map_err(|e| warn!("[grpc] can't contact server: {}", e))
-                        .map(|_| ()),
-                );
-                Ok(())
-            })
-            .map(|_| Response::new(PublishRawBlockReply {}));
-        Box::new(response)
+        let raw_blk_msg = request.into_inner();
+        let mut de = Deserializer::new(bytes::BytesMut::from(raw_blk_msg.raw_block));
+        let block = match ensicoin_messages::resource::Block::deserialize(&mut de) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("[grpc] Error reading block: {}", e);
+                return future::err(tower_grpc::Status::new(
+                    tower_grpc::Code::InvalidArgument,
+                    format!("Error parsing: {}", e),
+                ));
+            }
+        };
+        tokio::spawn(
+            sender
+                .clone()
+                .send(ConnectionMessage::NewBlock(
+                    block,
+                    intern_messages::Source::RPC,
+                ))
+                .map_err(|e| warn!("[grpc] can't contact server: {}", e))
+                .map(|_| ()),
+        );
+        future::ok(Response::new(PublishRawBlockReply {}))
     }
 
     type GetBlockTemplateStream =
