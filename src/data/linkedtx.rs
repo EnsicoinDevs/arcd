@@ -5,19 +5,20 @@ use std::collections::{HashMap, HashSet};
 
 use sha2::Digest;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Dependency {
     pub dep_type: DependencyType,
     pub data: UtxoData,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum DependencyType {
     Block,
     Pending,
     Mempool,
 }
 
+#[derive(Clone)]
 pub struct LinkedTransaction {
     pub transaction: Transaction,
     input_count: usize,

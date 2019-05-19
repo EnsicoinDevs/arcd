@@ -1,6 +1,7 @@
 use crate::data::{linkedtx::LinkedTransaction, PairedUtxo};
 use ensicoin_messages::resource::{Block, BlockHeader};
 
+#[derive(Clone)]
 pub struct LinkedBlock {
     pub header: BlockHeader,
     pub txs: Vec<LinkedTransaction>,

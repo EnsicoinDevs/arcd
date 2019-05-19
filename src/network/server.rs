@@ -19,7 +19,6 @@ const CHANNEL_CAPACITY: usize = 1_024;
 
 pub struct Server {
     broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
-    broadcast_buffer: std::collections::VecDeque<BroadcastMessage>,
     connection_receiver: FullMessageStream,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
@@ -113,7 +112,6 @@ impl Server {
             .select(inbound_connection_stream);
 
         let server = Server {
-            broadcast_buffer: std::collections::VecDeque::new(),
             broadcast_channel: Arc::new(RwLock::from(Bus::new(30))),
             connections: std::collections::HashMap::new(),
             connection_receiver: message_stream,
@@ -215,7 +213,7 @@ impl Server {
                 Connection::initiate(&address, self.connection_sender.clone());
             }
             ConnectionMessage::NewTransaction(tx, _) => {
-                //TODO how to verify tx
+                // Verify tx in mempool insert
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);
                 self.mempool.write().unwrap().insert(ltx);
@@ -225,9 +223,10 @@ impl Server {
                 let hash = lblock.header.double_hash();
                 self.utxo_manager.link_block(&mut lblock);
                 if lblock.is_valid() {
-                    self.utxo_manager.register_block(&lblock)?;
-                    match self.blockchain.write()?.new_block(lblock)? {
+                    match self.blockchain.write()?.new_block(lblock.clone())? {
                         NewAddition::Fork => {
+                            self.utxo_manager.register_block(&lblock)?;
+                            self.mempool.write()?.remove_tx(&lblock);
                             let best_block = self.blockchain.read()?.best_block_hash()?;
                             let common_hash = match self
                                 .blockchain
@@ -274,6 +273,7 @@ impl Server {
                             }
                         }
                         NewAddition::BestBlock => {
+                            self.utxo_manager.register_block(&lblock)?;
                             if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
                                 BroadcastMessage::BestBlock(
                                     self.blockchain

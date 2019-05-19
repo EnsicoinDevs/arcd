@@ -1,4 +1,5 @@
 use crate::data::{
+    linkedblock::LinkedBlock,
     linkedtx::{Dependency, DependencyType, LinkedTransaction},
     UtxoData,
 };
@@ -23,6 +24,19 @@ impl Mempool {
 
             dependencies: HashMap::new(),
         }
+    }
+
+    pub fn remove_tx(&mut self, block: &LinkedBlock) {
+        for tx in &block.txs {
+            self.pool.remove(&tx.transaction.double_hash());
+        }
+    }
+
+    pub fn get_tx(&self) -> Vec<ensicoin_messages::resource::Transaction> {
+        self.pool
+            .values()
+            .map(|ltx| ltx.transaction.clone())
+            .collect()
     }
 
     fn added_parent_to_pool(&mut self, hash_tx: Sha256Result) {
