@@ -6,9 +6,10 @@ use tokio_bus::Bus;
 use crate::{
     data::{
         intern_messages::{BroadcastMessage, ConnectionMessage, ServerMessage},
+        linkedblock::LinkedBlock,
         linkedtx::LinkedTransaction,
     },
-    manager::{Blockchain, Mempool, UtxoManager},
+    manager::{Blockchain, Mempool, NewAddition, UtxoManager},
     network::{Connection, RPCNode},
     Error,
 };
@@ -17,7 +18,8 @@ use std::sync::{Arc, RwLock};
 const CHANNEL_CAPACITY: usize = 1_024;
 
 pub struct Server {
-    broadcast_channel: Arc<Bus<BroadcastMessage>>,
+    broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
+    broadcast_buffer: std::collections::VecDeque<BroadcastMessage>,
     connection_receiver: FullMessageStream,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
@@ -38,7 +40,7 @@ impl futures::Future for Server {
         loop {
             match self.connection_receiver.poll() {
                 Ok(Async::Ready(None)) => (),
-                Ok(Async::Ready(Some(msg))) => self.handle_message(msg),
+                Ok(Async::Ready(Some(msg))) => self.handle_message(msg).unwrap(),
                 Ok(Async::NotReady) => return Ok(Async::NotReady),
                 Err(e) => panic!("Server encountered an error: {}", e),
             }
@@ -111,7 +113,8 @@ impl Server {
             .select(inbound_connection_stream);
 
         let server = Server {
-            broadcast_channel: Arc::new(Bus::new(30)),
+            broadcast_buffer: std::collections::VecDeque::new(),
+            broadcast_channel: Arc::new(RwLock::from(Bus::new(30))),
             connections: std::collections::HashMap::new(),
             connection_receiver: message_stream,
             connection_sender: sender,
@@ -139,7 +142,7 @@ impl Server {
         tokio::run(rpc.join(server).map(|_| ()));
     }
 
-    fn handle_message(&mut self, message: ConnectionMessage) {
+    fn handle_message(&mut self, message: ConnectionMessage) -> Result<(), Error> {
         trace!("Server handling: {}", message);
         match message {
             ConnectionMessage::Register(sender, host) => {
@@ -147,12 +150,7 @@ impl Server {
                     info!("Registered [{}]", &host);
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
-                        let getblocks = self
-                            .blockchain
-                            .read()
-                            .unwrap()
-                            .generate_get_blocks()
-                            .unwrap();
+                        let getblocks = self.blockchain.read()?.generate_get_blocks()?;
                         let (t, v) = getblocks.raw_bytes();
                         let msg = ServerMessage::SendMessage(t, v);
                         let getmempool = ensicoin_messages::message::GetMempool {};
@@ -177,7 +175,7 @@ impl Server {
                 if let Some(_) = self.connections.remove(&host) {
                     self.collection_count -= 1;
                 };
-                trace!("Cleaned connection [{}] because", host);
+                trace!("Cleaned connection [{}]", host);
             }
             ConnectionMessage::Disconnect(e, host) => {
                 if self.connections.contains_key(&host) {
@@ -185,11 +183,11 @@ impl Server {
                 }
             }
             ConnectionMessage::CheckInv(inv, source) => {
-                let (unknown_blocks, _txs) =
-                    self.blockchain.read().unwrap().unknown_inv(inv).unwrap();
-                let get_data = ensicoin_messages::message::GetData {
-                    inventory: unknown_blocks,
-                };
+                let (mut unknown, txs) =
+                    self.blockchain.read()?.get_unknown_blocks(inv.inventory)?;
+                let (mut unknown_tx, _) = self.mempool.read()?.get_unknown_tx(txs);
+                unknown.append(&mut unknown_tx);
+                let get_data = ensicoin_messages::message::GetData { inventory: unknown };
                 if get_data.inventory.len() > 0 {
                     match source {
                         crate::data::intern_messages::Source::Connection(remote) => {
@@ -202,13 +200,7 @@ impl Server {
             }
             ConnectionMessage::Retrieve(_, _) => (), //TODO: handle getdata
             ConnectionMessage::SyncBlocks(get_blocks, remote) => {
-                let inv = match self.blockchain.read().unwrap().generate_inv(&get_blocks) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        warn!("Database error: {}", e);
-                        return;
-                    }
-                };
+                let inv = self.blockchain.read()?.generate_inv(&get_blocks)?;
                 if inv.inventory.len() > 0 {
                     match remote {
                         crate::data::intern_messages::Source::Connection(remote) => {
@@ -228,13 +220,85 @@ impl Server {
                 self.utxo_manager.link(&mut ltx);
                 self.mempool.write().unwrap().insert(ltx);
             }
-            ConnectionMessage::NewBlock(_, _) => (), //TODO verify blocks
+            ConnectionMessage::NewBlock(block, source) => {
+                let mut lblock = LinkedBlock::new(block);
+                let hash = lblock.header.double_hash();
+                self.utxo_manager.link_block(&mut lblock);
+                if lblock.is_valid() {
+                    self.utxo_manager.register_block(&lblock)?;
+                    match self.blockchain.write()?.new_block(lblock)? {
+                        NewAddition::Fork => {
+                            let best_block = self.blockchain.read()?.best_block_hash()?;
+                            let common_hash = match self
+                                .blockchain
+                                .read()?
+                                .find_common_hash(best_block, hash.clone())?
+                            {
+                                Some(h) => h,
+                                None => return Err(Error::NotFound("merge point".to_string())),
+                            };
+                            let new_branch =
+                                self.blockchain.read()?.chain_until(&hash, &common_hash)?;
+                            let pop_contex = self.blockchain.write()?.pop_until(&common_hash)?;
+                            for utxo in pop_contex.utxo_to_remove {
+                                self.utxo_manager.delete(&utxo)?;
+                            }
+                            self.utxo_manager.restore(pop_contex.utxo_to_restore)?;
+                            for tx in pop_contex.txs_to_restore {
+                                let mut ltx = LinkedTransaction::new(tx);
+                                self.utxo_manager.link(&mut ltx);
+                                self.mempool.write()?.insert(ltx);
+                            }
+                            let block_chain =
+                                self.blockchain.read()?.chain_to_blocks(new_branch)?;
+                            let mut linked_chain: Vec<_> = block_chain
+                                .into_iter()
+                                .map(|b| LinkedBlock::new(b))
+                                .collect();
+                            linked_chain
+                                .iter_mut()
+                                .for_each(|mut lb| self.utxo_manager.link_block(&mut lb));
+                            self.blockchain.write()?.add_chain(&linked_chain)?;
+                            for lb in &linked_chain {
+                                self.utxo_manager.register_block(lb)?;
+                            }
+                            if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
+                                BroadcastMessage::BestBlock(
+                                    self.blockchain
+                                        .read()?
+                                        .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                        .unwrap(),
+                                ),
+                            ) {
+                                error!("Could not broadcast");
+                            }
+                        }
+                        NewAddition::BestBlock => {
+                            if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
+                                BroadcastMessage::BestBlock(
+                                    self.blockchain
+                                        .read()?
+                                        .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                        .unwrap(),
+                                ),
+                            ) {
+                                error!("Could not broadcast");
+                            }
+                        }
+                        _ => (),
+                    }
+                } else {
+                    warn!("Recieved invalid Block from {}", source);
+                }
+            }
             ConnectionMessage::NewConnection(socket) => {
-                // TODO: add connection limit
-                let new_conn = Connection::new(socket, self.connection_sender.clone());
-                trace!("new connection");
-                tokio::spawn(new_conn);
+                if self.collection_count < self.max_connections_count {
+                    let new_conn = Connection::new(socket, self.connection_sender.clone());
+                    trace!("new connection");
+                    tokio::spawn(new_conn);
+                }
             }
         }
+        Ok(())
     }
 }

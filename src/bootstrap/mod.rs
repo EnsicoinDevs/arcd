@@ -27,12 +27,17 @@ pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
     stats_dir.push(data_dir.clone());
     stats_dir.push("stats");
 
+    let mut work_dir = std::path::PathBuf::new();
+    work_dir.push(data_dir);
+    work_dir.push("work");
+
     match std::fs::remove_dir_all(utxo_dir)
         .and(std::fs::remove_dir_all(rev_dir))
         .and(std::fs::remove_dir_all(spent_tx_dir))
         .and(std::fs::remove_dir_all(stats_dir))
         .and(std::fs::remove_dir_all(blockchain_dir.clone()))
         .and(std::fs::remove_file(settings.clone()))
+        .and(std::fs::remove_dir_all(work_dir))
     {
         Ok(_) => Ok(()),
         Err(e) => Err(format!("Can't clean data_dir: {}", e)),
@@ -51,6 +56,11 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
     let mut stats_dir = std::path::PathBuf::new();
     stats_dir.push(data_dir);
     stats_dir.push("stats");
+
+    let mut work_dir = std::path::PathBuf::new();
+    work_dir.push(data_dir);
+    work_dir.push("work");
+    let work = sled::Db::start_default(work_dir).unwrap();
 
     let settings = match fs::File::create(settings) {
         Ok(f) => f,
@@ -113,6 +123,13 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
     if let Err(e) = stats_db.set("genesis_block", genesis.double_hash().serialize().to_vec()) {
         return Err(format!("Could not insert genesis hash in stats: {}", e));
     };
+
+    if let Err(e) = work.set(
+        genesis.double_hash().serialize().to_vec(),
+        vec![0 as u8].serialize().to_vec(),
+    ) {
+        return Err(format!("Could not insert base work: {}", e));
+    }
 
     if let Err(e) = stats_db.set("best_block", genesis.double_hash().serialize().to_vec()) {
         return Err(format!(

@@ -11,6 +11,19 @@ pub enum Source {
     RPC,
 }
 
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Source::Connection(r) => format!("connetion [{}]", r),
+                Source::RPC => "RPC".to_string(),
+            }
+        )
+    }
+}
+
 /// Messages sent to the server by the connections for example
 pub enum ConnectionMessage {
     Disconnect(Error, String),

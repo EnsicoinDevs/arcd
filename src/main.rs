@@ -33,6 +33,7 @@ extern crate sled;
 extern crate ensicoin_serializer;
 //#[macro_use]
 extern crate ensicoin_messages;
+#[macro_use]
 extern crate ensicoin_serializer_derive;
 
 extern crate generic_array;

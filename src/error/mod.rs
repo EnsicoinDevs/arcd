@@ -12,7 +12,9 @@ pub enum Error {
     TimerError(tokio_timer::Error),
     StreamError,
     DatabaseError(sled::Error),
+    InvalidBlock,
     NotFound(String),
+    PoisonedLock,
 }
 
 impl std::fmt::Display for Error {
@@ -31,6 +33,8 @@ impl std::fmt::Display for Error {
             Error::ServerTermination => write!(f, "Server terminated the connection"),
             Error::NotFound(r) => write!(f, "Resource not found: {}", r),
             Error::DatabaseError(e) => write!(f, "Database error: {}", e),
+            Error::PoisonedLock => write!(f, "Poisoned lock"),
+            Error::InvalidBlock => write!(f, "Invalid Block"),
         }
     }
 }
@@ -56,5 +60,11 @@ impl From<tokio_timer::Error> for Error {
 impl From<sled::Error> for Error {
     fn from(error: sled::Error) -> Self {
         Error::DatabaseError(error)
+    }
+}
+
+impl<T> From<std::sync::PoisonError<T>> for Error {
+    fn from(_: std::sync::PoisonError<T>) -> Self {
+        Error::PoisonedLock
     }
 }

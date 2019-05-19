@@ -1,4 +1,4 @@
-use crate::data::{validation::SanityCheck, UtxoData};
+use crate::data::{validation::SanityCheck, PairedUtxo, UtxoData};
 use ensicoin_messages::resource::{Outpoint, Transaction};
 use ensicoin_serializer::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -57,6 +57,17 @@ impl LinkedTransaction {
 
     pub fn unknown(&self) -> &HashSet<Outpoint> {
         &self.unknown_parent
+    }
+
+    pub fn get_dependent_utxo(&self) -> Vec<PairedUtxo> {
+        let mut utxos = Vec::new();
+        for (out, dep) in self.dependencies.iter() {
+            utxos.push(PairedUtxo {
+                data: dep.data.clone(),
+                outpoint: out.clone(),
+            })
+        }
+        utxos
     }
 
     pub fn add_dependency(&mut self, outpoint: Outpoint, dep: Dependency) {

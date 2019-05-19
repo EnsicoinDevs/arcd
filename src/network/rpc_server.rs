@@ -6,7 +6,8 @@ use node::{
     server, Block, BlockTemplate, ConnectPeerReply, ConnectPeerRequest, DisconnectPeerReply,
     DisconnectPeerRequest, GetBlockByHashReply, GetBlockByHashRequest, GetBlockTemplateReply,
     GetBlockTemplateRequest, GetInfoReply, GetInfoRequest, GetTxByHashReply, GetTxByHashRequest,
-    PublishRawBlockReply, PublishRawBlockRequest, PublishRawTxReply, PublishRawTxRequest, Tx,
+    Outpoint, PublishRawBlockReply, PublishRawBlockRequest, PublishRawTxReply, PublishRawTxRequest,
+    Tx, TxInput, TxOutput,
 };
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     data::intern_messages::{self, BroadcastMessage, ConnectionMessage},
     manager::{Blockchain, Mempool},
 };
-use ensicoin_serializer::{Deserialize, Deserializer};
+use ensicoin_serializer::{Deserialize, Deserializer, Serialize, Sha256Result};
 use futures::{future, stream, Future, Sink, Stream};
 use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
@@ -31,12 +32,53 @@ struct State {
     mempool: Arc<RwLock<Mempool>>,
     blockchain: Arc<RwLock<Blockchain>>,
     server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
-    broadcast: Arc<Bus<BroadcastMessage>>,
+    broadcast: Arc<RwLock<Bus<BroadcastMessage>>>,
+}
+
+fn tx_to_rpc(tx: ensicoin_messages::resource::Transaction) -> Tx {
+    Tx {
+        hash: tx.double_hash().to_vec(),
+        version: tx.version,
+        flags: tx.flags,
+        inputs: tx
+            .inputs
+            .into_iter()
+            .map(|input| TxInput {
+                script: input.script.serialize().to_vec(),
+                previous_output: Some(Outpoint {
+                    hash: input.previous_output.hash.to_vec(),
+                    index: input.previous_output.index,
+                }),
+            })
+            .collect(),
+        outputs: tx
+            .outputs
+            .into_iter()
+            .map(|output| TxOutput {
+                value: output.value,
+                script: output.script.serialize().to_vec(),
+            })
+            .collect(),
+    }
+}
+
+fn block_to_rpc(block: ensicoin_messages::resource::Block) -> Block {
+    Block {
+        flags: block.header.flags.clone(),
+        hash: block.header.double_hash().to_vec(),
+        version: block.header.version,
+        prev_block: block.header.prev_block.to_vec(),
+        merkle_root: block.header.merkle_root.to_vec(),
+        timestamp: block.header.timestamp,
+        height: block.header.height,
+        target: block.header.target.to_vec(),
+        txs: block.txs.into_iter().map(|tx| tx_to_rpc(tx)).collect(),
+    }
 }
 
 impl State {
     fn new(
-        broadcast: Arc<Bus<BroadcastMessage>>,
+        broadcast: Arc<RwLock<Bus<BroadcastMessage>>>,
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
@@ -52,7 +94,7 @@ impl State {
 
 impl RPCNode {
     pub fn new(
-        broadcast: Arc<Bus<BroadcastMessage>>,
+        broadcast: Arc<RwLock<Bus<BroadcastMessage>>>,
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         sender: futures::sync::mpsc::Sender<ConnectionMessage>,
@@ -298,7 +340,31 @@ impl node::server::Node for RPCNode {
         &mut self,
         request: Request<GetBlockByHashRequest>,
     ) -> Self::GetBlockByHashFuture {
-        unimplemented!()
+        let request = request.into_inner();
+        let hash = Sha256Result::clone_from_slice(&request.hash);
+        let block = match self.state.blockchain.read() {
+            Ok(l) => match l.get_block(&hash) {
+                Ok(Some(b)) => b,
+                Ok(None) => {
+                    return future::result(Err(tower_grpc::Status::new(
+                        tower_grpc::Code::NotFound,
+                        "",
+                    )))
+                }
+                Err(_) => {
+                    return future::result(Err(tower_grpc::Status::new(
+                        tower_grpc::Code::Internal,
+                        "",
+                    )))
+                }
+            },
+            Err(_) => {
+                return future::result(Err(tower_grpc::Status::new(tower_grpc::Code::Internal, "")))
+            }
+        };
+        future::ok(tower_grpc::Response::new(GetBlockByHashReply {
+            block: Some(block_to_rpc(block)),
+        }))
     }
 
     type GetTxByHashFuture = future::FutureResult<Response<GetTxByHashReply>, tower_grpc::Status>;

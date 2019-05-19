@@ -1,26 +1,11 @@
-use crate::data::UtxoData;
+use crate::{
+    data::{linkedblock::LinkedBlock, PairedUtxo, UtxoData},
+    error::Error,
+};
 use bytes::BytesMut;
 use ensicoin_messages::resource::{Block, Outpoint, Transaction};
 
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
-
-pub enum Error {
-    DatabaseError(sled::Error),
-    ParseError(ensicoin_serializer::Error),
-    NoValueFound,
-}
-
-impl From<sled::Error> for Error {
-    fn from(error: sled::Error) -> Error {
-        Error::DatabaseError(error)
-    }
-}
-
-impl From<ensicoin_serializer::Error> for Error {
-    fn from(error: ensicoin_serializer::Error) -> Error {
-        Error::ParseError(error)
-    }
-}
 
 pub struct UtxoManager {
     database: sled::Db,
@@ -35,10 +20,21 @@ impl UtxoManager {
         UtxoManager { database }
     }
 
-    pub fn spent_utxo(&mut self, block: &Block) -> Vec<(Outpoint, UtxoData)> {
-        let spent = Vec::new();
-        for tx in &block.txs[1..] {}
-        spent
+    fn spend_block(&mut self, block: &LinkedBlock) -> Result<(), Error> {
+        for pairedutxo in block.spent_utxo() {
+            self.delete(&pairedutxo.outpoint)?;
+        }
+        Ok(())
+    }
+
+    pub fn register_block(&mut self, block: &LinkedBlock) -> Result<(), Error> {
+        let height = block.header.height;
+        let hash = block.header.double_hash();
+        self.register(&block.txs[0].transaction, &hash, true, height)?;
+        for tx in &block.txs[1..] {
+            self.register(&tx.transaction, &hash, false, height)?;
+        }
+        self.spend_block(block)
     }
 
     pub fn register(
@@ -77,7 +73,7 @@ impl UtxoManager {
                 let mut de = ensicoin_serializer::Deserializer::new(BytesMut::from(&*x));
                 Ok(UtxoData::deserialize(&mut de)?)
             }
-            None => Err(Error::NoValueFound),
+            None => Err(Error::NotFound(format!("utxo {:?}", utxo.hash))),
         }
     }
 
@@ -100,5 +96,19 @@ impl UtxoManager {
         }
     }
 
-    pub fn link_block(&self, linkedblock: &mut crate::data::linkedblock::LinkedBlock) {}
+    pub fn link_block(&self, linkedblock: &mut crate::data::linkedblock::LinkedBlock) {
+        for ltx in linkedblock.txs.iter_mut() {
+            self.link(ltx);
+        }
+    }
+
+    pub fn restore(&mut self, utxos: Vec<PairedUtxo>) -> Result<(), Error> {
+        for pairedtx in utxos {
+            self.database.set(
+                pairedtx.outpoint.serialize(),
+                pairedtx.data.serialize().to_vec(),
+            )?;
+        }
+        Ok(())
+    }
 }

@@ -1,4 +1,4 @@
-use crate::data::linkedtx::LinkedTransaction;
+use crate::data::{linkedtx::LinkedTransaction, PairedUtxo};
 use ensicoin_messages::resource::{Block, BlockHeader};
 
 pub struct LinkedBlock {
@@ -18,6 +18,20 @@ impl LinkedBlock {
                 .collect(),
         }
     }
+
+    pub fn spent_utxo(&self) -> Vec<PairedUtxo> {
+        let mut utxos = Vec::new();
+        for ltx in &self.txs {
+            utxos.append(&mut ltx.get_dependent_utxo());
+        }
+        utxos
+    }
+
+    pub fn work(&self) -> num_bigint::BigUint {
+        num_bigint::BigUint::from_bytes_be(&[0xff; 32])
+            - num_bigint::BigUint::from_bytes_be(&self.header.target)
+    }
+
     pub fn to_block(self) -> Block {
         let header = self.header;
         let txs = self.txs;

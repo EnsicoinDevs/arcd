@@ -1,8 +1,17 @@
 use bytes::Bytes;
-use ensicoin_messages::resource::{script::OP, tx::TransactionOutput};
+use ensicoin_messages::resource::{
+    script::OP,
+    tx::{Outpoint, TransactionOutput},
+};
 use ensicoin_serializer::{Deserialize, Serialize};
 
-#[derive(PartialEq, Eq)]
+#[derive(Serialize, Deserialize)]
+pub struct PairedUtxo {
+    pub data: UtxoData,
+    pub outpoint: Outpoint,
+}
+
+#[derive(PartialEq, Eq, Clone)]
 pub struct UtxoData {
     pub script: Vec<OP>,
     pub value: u64,

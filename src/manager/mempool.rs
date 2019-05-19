@@ -81,6 +81,30 @@ impl Mempool {
         }
     }
 
+    pub fn get_unknown_tx(
+        &self,
+        inv: Vec<ensicoin_messages::message::InvVect>,
+    ) -> (
+        Vec<ensicoin_messages::message::InvVect>,
+        Vec<ensicoin_messages::message::InvVect>,
+    ) {
+        let mut unknown = Vec::new();
+        let mut remaining = Vec::new();
+        for inv_vect in inv {
+            match inv_vect.data_type {
+                ensicoin_messages::message::ResourceType::Transaction => {
+                    if !self.pool.contains_key(&inv_vect.hash)
+                        && !self.orphan.contains_key(&inv_vect.hash)
+                    {
+                        unknown.push(inv_vect);
+                    }
+                }
+                _ => remaining.push(inv_vect),
+            }
+        }
+        (unknown, remaining)
+    }
+
     pub fn insert(&mut self, mut linked_tx: LinkedTransaction) {
         self.link(&mut linked_tx);
         let hash = linked_tx.transaction.double_hash();
