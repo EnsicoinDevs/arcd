@@ -94,15 +94,17 @@ impl Blockchain {
     }
 
     pub fn get_block(&self, hash: &Sha256Result) -> Result<Option<Block>, Error> {
+        debug!("Getting block from db");
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.database.get(&hash.serialize())? {
                 Some(b) => (*b).to_owned(),
                 None => return Ok(None),
             },
         ));
-        Block::deserialize(&mut de)
-            .map(|h| Some(h))
-            .map_err(|e| Error::ParseError(e))
+        Block::deserialize(&mut de).map(|h| Some(h)).map_err(|e| {
+            warn!("Error parsing block {} from db", hash_to_string(hash));
+            Error::ParseError(e)
+        })
     }
 
     pub fn block_2016_before(&self, hash: &Sha256Result) -> Result<Sha256Result, Error> {
@@ -331,7 +333,7 @@ impl Blockchain {
                         .set(hash, chain_work.to_bytes_be().serialize().to_vec())?;
                     NewAddition::Fork
                 } else {
-                    self.add_block(&block)?;
+                    self.add_block(block)?;
                     NewAddition::BestBlock
                 }
             } else {
@@ -344,18 +346,23 @@ impl Blockchain {
         )
     }
 
-    pub fn add_chain(&mut self, blocks: &Vec<LinkedBlock>) -> Result<(), Error> {
+    pub fn add_chain(&mut self, blocks: Vec<LinkedBlock>) -> Result<(), Error> {
         for b in blocks {
             self.add_block(b)?;
         }
         Ok(())
     }
 
-    fn add_block(&mut self, block: &LinkedBlock) -> Result<(), Error> {
+    fn add_block(&mut self, block: LinkedBlock) -> Result<(), Error> {
+        debug!(
+            "Adding block {} to blockchain",
+            hash_to_string(&block.header.double_hash())
+        );
         let chain_work = self.get_work(&block.header.prev_block)? + block.work();
-        let raw_block = block.header.serialize().to_vec();
-        let hash = block.header.double_hash();
         let spent_utxo = block.spent_utxo().serialize().to_vec();
+        let block = block.to_block();
+        let raw_block = block.serialize().to_vec();
+        let hash = block.header.double_hash();
         if block.header.height == 2016 {
             let genesis_hash = self.genesis_hash()?;
             let first_block_hash = self.block_after(&genesis_hash)?.unwrap();

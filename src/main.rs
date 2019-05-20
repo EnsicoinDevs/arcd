@@ -55,9 +55,11 @@ fn main() {
     let matches = cli::build_cli().get_matches();
 
     let log_level = if matches.is_present("verbose") {
-        simplelog::LevelFilter::Trace
+        simplelog::LevelFilter::Debug
     } else if matches.is_present("error") {
         simplelog::LevelFilter::Error
+    } else if matches.is_present("trace") {
+        simplelog::LevelFilter::Trace
     } else {
         simplelog::LevelFilter::Info
     };

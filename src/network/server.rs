@@ -141,7 +141,7 @@ impl Server {
     }
 
     fn handle_message(&mut self, message: ConnectionMessage) -> Result<(), Error> {
-        trace!("Server handling: {}", message);
+        debug!("Server handling: {}", message);
         match message {
             ConnectionMessage::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
@@ -226,10 +226,15 @@ impl Server {
                     .blockchain
                     .read()?
                     .get_target_next_block(lblock.header.timestamp)?;
+                debug!(
+                    "Validating block {}",
+                    ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                );
                 if lblock.is_valid(new_target) {
                     let addition = self.blockchain.write()?.new_block(lblock.clone())?;
                     match addition {
                         NewAddition::Fork => {
+                            debug!("Handling fork");
                             self.utxo_manager.register_block(&lblock)?;
                             self.mempool.write()?.remove_tx(&lblock);
                             let best_block = self.blockchain.read()?.best_block_hash()?;
@@ -262,10 +267,10 @@ impl Server {
                             linked_chain
                                 .iter_mut()
                                 .for_each(|mut lb| self.utxo_manager.link_block(&mut lb));
-                            self.blockchain.write()?.add_chain(&linked_chain)?;
                             for lb in &linked_chain {
                                 self.utxo_manager.register_block(lb)?;
                             }
+                            self.blockchain.write()?.add_chain(linked_chain)?;
                             if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
                                 BroadcastMessage::BestBlock(
                                     self.blockchain
@@ -278,6 +283,7 @@ impl Server {
                             }
                         }
                         NewAddition::BestBlock => {
+                            debug!("Adding as best block");
                             self.utxo_manager.register_block(&lblock)?;
                             if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
                                 BroadcastMessage::BestBlock(

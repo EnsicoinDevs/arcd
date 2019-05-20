@@ -45,6 +45,13 @@ pub fn build_cli() -> App<'static, 'static> {
                 .help("Set the output as verbose"),
         )
         .arg(
+            Arg::with_name("trace")
+                .long("trace")
+                .help("Set the output to trace")
+                .conflicts_with("verbose")
+                .conflicts_with("error"),
+        )
+        .arg(
             Arg::with_name("error")
                 .short("e")
                 .long("error")

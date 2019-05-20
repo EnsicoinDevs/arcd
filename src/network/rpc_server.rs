@@ -194,7 +194,6 @@ impl node::server::Node for RPCNode {
         info!("[grpc] PublishRawBlock");
         let sender = self.state.server_sender.clone();
         let raw_blk_msg = request.into_inner();
-        dbg!(&raw_blk_msg);
         let mut de = Deserializer::new(bytes::BytesMut::from(raw_blk_msg.raw_block));
         let block = match ensicoin_messages::resource::Block::deserialize(&mut de) {
             Ok(b) => b,
