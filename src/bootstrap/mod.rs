@@ -1,6 +1,5 @@
 use ensicoin_serializer::{Serialize, Sha256Result};
 
-use num_bigint::BigUint;
 use std::fs;
 
 pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {

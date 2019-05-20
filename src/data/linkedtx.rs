@@ -14,7 +14,6 @@ pub struct Dependency {
 #[derive(PartialEq, Eq, Clone)]
 pub enum DependencyType {
     Block,
-    Pending,
     Mempool,
 }
 
@@ -81,25 +80,10 @@ impl LinkedTransaction {
         };
     }
 
-    pub fn toggle_mempool(&mut self, outpoint: Outpoint) {
-        if let Some(d) = self.dependencies.get_mut(&outpoint) {
-            match d.dep_type {
-                DependencyType::Mempool => {
-                    d.dep_type = DependencyType::Pending;
-                    self.mempool_count -= 1;
-                }
-                DependencyType::Pending => {
-                    d.dep_type = DependencyType::Mempool;
-                    self.mempool_count += 1;
-                }
-                _ => (),
-            }
-        }
-    }
-
     pub fn is_complete(&self) -> bool {
         self.dep_count == self.input_count
     }
+
     pub fn is_valid(&self) -> Result<bool, ()> {
         if !self.transaction.sanity_check() {
             return Ok(false);
@@ -152,9 +136,5 @@ impl LinkedTransaction {
             input_sum += input.data.value
         }
         Ok(input_sum < output_sum)
-    }
-
-    pub fn is_publishable(&self) -> bool {
-        self.mempool_count == 0 && self.is_complete()
     }
 }

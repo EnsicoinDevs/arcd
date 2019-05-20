@@ -3,7 +3,7 @@ use crate::{
     error::Error,
 };
 use bytes::BytesMut;
-use ensicoin_messages::resource::{Block, Outpoint, Transaction};
+use ensicoin_messages::resource::{Outpoint, Transaction};
 
 use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
 
