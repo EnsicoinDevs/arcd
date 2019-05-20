@@ -222,8 +222,13 @@ impl Server {
                 let mut lblock = LinkedBlock::new(block);
                 let hash = lblock.header.double_hash();
                 self.utxo_manager.link_block(&mut lblock);
-                if lblock.is_valid() {
-                    match self.blockchain.write()?.new_block(lblock.clone())? {
+                let new_target = self
+                    .blockchain
+                    .read()?
+                    .get_target_next_block(lblock.header.timestamp)?;
+                if lblock.is_valid(new_target) {
+                    let addition = self.blockchain.write()?.new_block(lblock.clone())?;
+                    match addition {
                         NewAddition::Fork => {
                             self.utxo_manager.register_block(&lblock)?;
                             self.mempool.write()?.remove_tx(&lblock);

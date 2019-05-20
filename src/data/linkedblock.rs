@@ -41,8 +41,10 @@ impl LinkedBlock {
             txs: txs.into_iter().map(|txs| txs.transaction).collect(),
         }
     }
-    pub fn is_valid(&self) -> bool {
-        // TODO: Get the target
+    pub fn is_valid(&self, target: num_bigint::BigUint) -> bool {
+        if num_bigint::BigUint::from_bytes_be(&self.header.target) != target {
+            return false;
+        };
         for tx in &self.txs[1..] {
             if !tx.is_complete() {
                 return false;

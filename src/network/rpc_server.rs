@@ -2,12 +2,13 @@ pub mod node {
     include!(concat!(env!("OUT_DIR"), "/ensicoin_rpc.rs"));
 }
 
+use crate::utils::big_uint_to_hash;
 use node::{
     server, Block, BlockTemplate, ConnectPeerReply, ConnectPeerRequest, DisconnectPeerReply,
-    DisconnectPeerRequest, GetBlockByHashReply, GetBlockByHashRequest, GetBlockTemplateReply,
-    GetBlockTemplateRequest, GetInfoReply, GetInfoRequest, GetTxByHashReply, GetTxByHashRequest,
-    Outpoint, PublishRawBlockReply, PublishRawBlockRequest, PublishRawTxReply, PublishRawTxRequest,
-    Tx, TxInput, TxOutput,
+    DisconnectPeerRequest, GetBestBlocksReply, GetBestBlocksRequest, GetBlockByHashReply,
+    GetBlockByHashRequest, GetBlockTemplateReply, GetBlockTemplateRequest, GetInfoReply,
+    GetInfoRequest, GetTxByHashReply, GetTxByHashRequest, Outpoint, PublishRawBlockReply,
+    PublishRawBlockRequest, PublishRawTxReply, PublishRawTxRequest, Tx, TxInput, TxOutput,
 };
 
 use crate::{
@@ -15,7 +16,7 @@ use crate::{
     data::intern_messages::{self, BroadcastMessage, ConnectionMessage},
     manager::{Blockchain, Mempool},
 };
-use ensicoin_serializer::{Deserialize, Deserializer, Serialize, Sha256Result};
+use ensicoin_serializer::{hash_to_string, Deserialize, Deserializer, Serialize, Sha256Result};
 use futures::{future, stream, Future, Sink, Stream};
 use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
@@ -141,6 +142,10 @@ impl node::server::Node for RPCNode {
                 Ok(a) => a.to_vec(),
                 Err(_) => Vec::new(),
             },
+            genesis_block_hash: match self.state.blockchain.read().unwrap().genesis_hash() {
+                Ok(h) => h.to_vec(),
+                Err(_) => Vec::new(),
+            },
         });
         future::ok(response)
     }
@@ -189,6 +194,7 @@ impl node::server::Node for RPCNode {
         info!("[grpc] PublishRawBlock");
         let sender = self.state.server_sender.clone();
         let raw_blk_msg = request.into_inner();
+        dbg!(&raw_blk_msg);
         let mut de = Deserializer::new(bytes::BytesMut::from(raw_blk_msg.raw_block));
         let block = match ensicoin_messages::resource::Block::deserialize(&mut de) {
             Ok(b) => b,
@@ -213,6 +219,38 @@ impl node::server::Node for RPCNode {
         future::ok(Response::new(PublishRawBlockReply {}))
     }
 
+    type GetBestBlocksStream =
+        Box<Stream<Item = GetBestBlocksReply, Error = tower_grpc::Status> + Send>;
+    type GetBestBlocksFuture =
+        future::FutureResult<Response<Self::GetBestBlocksStream>, tower_grpc::Status>;
+
+    fn get_best_blocks(
+        &mut self,
+        _request: Request<GetBestBlocksRequest>,
+    ) -> Self::GetBestBlocksFuture {
+        let state = self.state.clone();
+        let rx = state.broadcast.write().unwrap().add_rx();
+
+        let response = rx
+            .filter(|message| match message {
+                BroadcastMessage::BestBlock(_) => true,
+                //_ => false,
+            })
+            .map(move |message| {
+                let block = match message {
+                    BroadcastMessage::BestBlock(block) => block,
+                    //_ => unreachable!(),
+                };
+
+                GetBestBlocksReply {
+                    hash: block.header.double_hash().to_vec(),
+                }
+            })
+            .map_err(|_| tower_grpc::Status::new(tower_grpc::Code::Internal, ""));
+
+        future::ok(Response::new(Box::new(response)))
+    }
+
     type GetBlockTemplateStream =
         Box<Stream<Item = GetBlockTemplateReply, Error = tower_grpc::Status> + Send>;
     type GetBlockTemplateFuture =
@@ -220,9 +258,69 @@ impl node::server::Node for RPCNode {
 
     fn get_block_template(
         &mut self,
-        request: Request<GetBlockTemplateRequest>,
+        _request: Request<GetBlockTemplateRequest>,
     ) -> Self::GetBlockTemplateFuture {
-        unimplemented!()
+        let state = self.state.clone();
+        let rx = state.broadcast.write().unwrap().add_rx();
+        let best_block_hash = state.blockchain.read().unwrap().best_block_hash().unwrap();
+        let best_block = state
+            .blockchain
+            .read()
+            .unwrap()
+            .get_block(&best_block_hash)
+            .unwrap()
+            .unwrap();
+
+        let response = futures::stream::once(Ok(BroadcastMessage::BestBlock(best_block)))
+            .chain(rx.filter(|message| match message {
+                BroadcastMessage::BestBlock(_) => true,
+                //_ => false,
+            }))
+            .map(move |message| {
+                let block = match message {
+                    BroadcastMessage::BestBlock(block) => block,
+                    //_ => unreachable!(),
+                };
+                let txs = state
+                    .mempool
+                    .read()
+                    .unwrap()
+                    .get_tx()
+                    .into_iter()
+                    .map(|tx| tx_to_rpc(tx))
+                    .collect();
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let height = block.header.height;
+                let prev_block = block.header.double_hash();
+                let flags = Vec::new();
+                let version = crate::constants::VERSION;
+                let target = big_uint_to_hash(
+                    state
+                        .blockchain
+                        .read()
+                        .unwrap()
+                        .get_target_next_block(timestamp)
+                        .unwrap(),
+                );
+                let block_template = BlockTemplate {
+                    timestamp,
+                    height,
+                    prev_block: prev_block.to_vec(),
+                    flags,
+                    version,
+                    target: target.to_vec(),
+                };
+                GetBlockTemplateReply {
+                    block_template: Some(block_template),
+                    txs,
+                }
+            })
+            .map_err(|_| tower_grpc::Status::new(tower_grpc::Code::Internal, ""));
+
+        future::ok(Response::new(Box::new(response)))
     }
 
     type ConnectPeerFuture = future::FutureResult<Response<ConnectPeerReply>, tower_grpc::Status>;

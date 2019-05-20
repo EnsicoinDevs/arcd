@@ -5,6 +5,7 @@ mod data;
 mod error;
 mod manager;
 mod network;
+pub mod utils;
 pub use error::Error;
 
 use network::Server;

@@ -478,4 +478,32 @@ impl Blockchain {
             utxo_to_restore,
         })
     }
+
+    pub fn get_target_next_block(&self, timestamp: u64) -> Result<BigUint, Error> {
+        use crate::constants::TIME_BEETWEEN_BLOCKS;
+
+        let best_block = self.get_block(&self.best_block_hash()?)?.unwrap();
+        let mut ancestor = self.get_block(&self.genesis_hash()?)?.unwrap();
+        if best_block.header.height >= 2016 {
+            ancestor = self
+                .get_block(
+                    &self
+                        .block_after(&self.block_2016_before(&self.best_block_hash()?)?)?
+                        .unwrap(),
+                )?
+                .unwrap();
+
+            let old_target = BigUint::from_bytes_be(&best_block.header.target);
+            let mut time_diff = timestamp - ancestor.header.timestamp;
+            if time_diff > 4 * TIME_BEETWEEN_BLOCKS {
+                time_diff = 4 * TIME_BEETWEEN_BLOCKS
+            } else if time_diff < TIME_BEETWEEN_BLOCKS / 4 {
+                time_diff = TIME_BEETWEEN_BLOCKS / 4
+            };
+            let refactor_target = time_diff / TIME_BEETWEEN_BLOCKS;
+            Ok(old_target * BigUint::from(refactor_target))
+        } else {
+            Ok(BigUint::from_bytes_be(&ancestor.header.target))
+        }
+    }
 }

@@ -82,7 +82,7 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
             nonce: 42,
             height: 0,
             target: Sha256Result::from([
-                0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0,
             ]),
         },
