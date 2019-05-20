@@ -59,16 +59,18 @@ pub fn build_cli() -> App<'static, 'static> {
                 .conflicts_with("verbose"),
         )
         .arg(
-            Arg::with_name("prompt_port")
-                .long("prompt")
-                .validator(is_port)
-                .help("Port to connect the prompt to"),
-        )
-        .arg(
             Arg::with_name("grpc_port")
                 .long("grpc")
                 .short("g")
                 .help("Listening port for gRPC")
+                .takes_value(true)
+                .validator(is_port),
+        )
+        .arg(
+            Arg::with_name("port")
+                .long("port")
+                .short("p")
+                .help("Ensicoin listening port")
                 .takes_value(true)
                 .validator(is_port),
         )
