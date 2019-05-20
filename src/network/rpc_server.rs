@@ -17,11 +17,11 @@ use crate::{
     manager::{Blockchain, Mempool},
 };
 use ensicoin_serializer::{hash_to_string, Deserialize, Deserializer, Serialize, Sha256Result};
-use futures::{future, stream, Future, Sink, Stream};
+use futures::{future, Future, Sink, Stream};
 use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
 use tokio_bus::Bus;
-use tower_grpc::{Request, Response, Streaming};
+use tower_grpc::{Request, Response};
 use tower_hyper::server::{Http, Server};
 
 #[derive(Clone)]
@@ -156,7 +156,7 @@ impl node::server::Node for RPCNode {
         &mut self,
         request: Request<PublishRawTxRequest>,
     ) -> Self::PublishRawTxFuture {
-        info!("[grpc] PublishRawTx");
+        trace!("[grpc] PublishRawTx");
         let sender = self.state.server_sender.clone();
         let raw_tx_msg = request.into_inner();
 
@@ -191,7 +191,7 @@ impl node::server::Node for RPCNode {
         &mut self,
         request: Request<PublishRawBlockRequest>,
     ) -> Self::PublishRawBlockFuture {
-        info!("[grpc] PublishRawBlock");
+        trace!("[grpc] PublishRawBlock");
         let sender = self.state.server_sender.clone();
         let raw_blk_msg = request.into_inner();
         let mut de = Deserializer::new(bytes::BytesMut::from(raw_blk_msg.raw_block));
@@ -419,6 +419,12 @@ impl node::server::Node for RPCNode {
         request: Request<GetBlockByHashRequest>,
     ) -> Self::GetBlockByHashFuture {
         let request = request.into_inner();
+        if request.hash.len() != 32 {
+            return future::err(tower_grpc::Status::new(
+                tower_grpc::Code::InvalidArgument,
+                "hash is not 32 bytes",
+            ));
+        };
         let hash = Sha256Result::clone_from_slice(&request.hash);
         let block = match self.state.blockchain.read() {
             Ok(l) => match l.get_block(&hash) {
@@ -447,6 +453,28 @@ impl node::server::Node for RPCNode {
 
     type GetTxByHashFuture = future::FutureResult<Response<GetTxByHashReply>, tower_grpc::Status>;
     fn get_tx_by_hash(&mut self, request: Request<GetTxByHashRequest>) -> Self::GetTxByHashFuture {
-        unimplemented!()
+        let request = request.into_inner();
+        if request.hash.len() != 32 {
+            return future::err(tower_grpc::Status::new(
+                tower_grpc::Code::InvalidArgument,
+                "hash is not 32 bytes",
+            ));
+        };
+        let hash = Sha256Result::clone_from_slice(&request.hash);
+        let tx = match self.state.mempool.read() {
+            Ok(l) => match l.get_tx_by_hash(&hash) {
+                Some(tx) => tx,
+                None => {
+                    return future::err(tower_grpc::Status::new(
+                        tower_grpc::Code::NotFound,
+                        hash_to_string(&hash),
+                    ))
+                }
+            },
+            Err(_) => return future::err(tower_grpc::Status::new(tower_grpc::Code::Internal, "")),
+        };
+        future::ok(Response::new(GetTxByHashReply {
+            tx: Some(tx_to_rpc(tx)),
+        }))
     }
 }
