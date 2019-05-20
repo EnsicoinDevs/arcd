@@ -196,7 +196,21 @@ impl Server {
                     }
                 };
             }
-            ConnectionMessage::Retrieve(_, _) => (), //TODO: handle getdata
+            ConnectionMessage::Retrieve(get_data, source) => {
+                if let crate::data::intern_messages::Source::Connection(remote) = source {
+                    let (blocks, remaining) =
+                        self.blockchain.read()?.get_data(get_data.inventory)?;
+                    for block in blocks {
+                        let (t, v) = block.raw_bytes();
+                        self.send(remote.clone(), ServerMessage::SendMessage(t, v));
+                    }
+                    let (txs, _) = self.mempool.read()?.get_data(remaining);
+                    for tx in txs {
+                        let (t, v) = tx.raw_bytes();
+                        self.send(remote.clone(), ServerMessage::SendMessage(t, v));
+                    }
+                }
+            }
             ConnectionMessage::SyncBlocks(get_blocks, remote) => {
                 let inv = self.blockchain.read()?.generate_inv(&get_blocks)?;
                 if inv.inventory.len() > 0 {

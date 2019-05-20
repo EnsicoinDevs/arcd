@@ -39,6 +39,13 @@ impl Mempool {
             .collect()
     }
 
+    pub fn get_tx_by_hash(
+        &self,
+        hash: &Sha256Result,
+    ) -> Option<ensicoin_messages::resource::Transaction> {
+        self.pool.get(hash).map(|ltx| ltx.transaction.clone())
+    }
+
     fn added_parent_to_pool(&mut self, hash_tx: Sha256Result) {
         if let Some(dependencies) = self.dependencies.get(&hash_tx).cloned() {
             for (orphan_hash, outpoint) in dependencies {
@@ -93,6 +100,28 @@ impl Mempool {
                 }
             }
         }
+    }
+
+    pub fn get_data(
+        &self,
+        inv: Vec<ensicoin_messages::message::InvVect>,
+    ) -> (
+        Vec<ensicoin_messages::resource::Transaction>,
+        Vec<ensicoin_messages::message::InvVect>,
+    ) {
+        let mut txs = Vec::new();
+        let mut remaining = Vec::new();
+        for inv_vect in inv {
+            match inv_vect.data_type {
+                ensicoin_messages::message::ResourceType::Transaction => {
+                    if let Some(tx) = self.get_tx_by_hash(&inv_vect.hash) {
+                        txs.push(tx);
+                    }
+                }
+                _ => remaining.push(inv_vect),
+            }
+        }
+        (txs, remaining)
     }
 
     pub fn get_unknown_tx(

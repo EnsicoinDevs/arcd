@@ -513,4 +513,29 @@ impl Blockchain {
             Ok(BigUint::from_bytes_be(&ancestor.header.target))
         }
     }
+
+    pub fn get_data(
+        &self,
+        inv: Vec<ensicoin_messages::message::InvVect>,
+    ) -> Result<
+        (
+            Vec<ensicoin_messages::resource::Block>,
+            Vec<ensicoin_messages::message::InvVect>,
+        ),
+        Error,
+    > {
+        let mut remaining = Vec::new();
+        let mut blocks = Vec::new();
+        for inv_vect in inv {
+            match inv_vect.data_type {
+                ensicoin_messages::message::ResourceType::Block => {
+                    if let Some(b) = self.get_block(&inv_vect.hash)? {
+                        blocks.push(b);
+                    }
+                }
+                _ => remaining.push(inv_vect),
+            }
+        }
+        Ok((blocks, remaining))
+    }
 }
