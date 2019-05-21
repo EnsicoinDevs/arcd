@@ -394,7 +394,10 @@ impl Connection {
                 ));
             }
             MessageType::NotFound => (),
-            MessageType::Block => (),
+            MessageType::Block => self.server_buffer.push_back(ConnectionMessage::NewBlock(
+                ensicoin_messages::resource::Block::deserialize(&mut de)?,
+                intern_messages::Source::Connection(self.remote().to_string()),
+            )),
             MessageType::GetBlocks => {
                 self.server_buffer.push_back(ConnectionMessage::SyncBlocks(
                     GetBlocks::deserialize(&mut de)?,

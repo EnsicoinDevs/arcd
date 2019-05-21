@@ -197,6 +197,7 @@ impl Server {
                 };
             }
             ConnectionMessage::Retrieve(get_data, source) => {
+                // GetData
                 if let crate::data::intern_messages::Source::Connection(remote) = source {
                     let (blocks, remaining) =
                         self.blockchain.read()?.get_data(get_data.inventory)?;
@@ -212,6 +213,7 @@ impl Server {
                 }
             }
             ConnectionMessage::SyncBlocks(get_blocks, remote) => {
+                // Handling: Best Block
                 let inv = self.blockchain.read()?.generate_inv(&get_blocks)?;
                 if inv.inventory.len() > 0 {
                     match remote {
@@ -285,6 +287,10 @@ impl Server {
                                 self.utxo_manager.register_block(lb)?;
                             }
                             self.blockchain.write()?.add_chain(linked_chain)?;
+                            info!(
+                                "New best block after fork: {}",
+                                ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                            );
                             if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
                                 BroadcastMessage::BestBlock(
                                     self.blockchain
@@ -297,7 +303,10 @@ impl Server {
                             }
                         }
                         NewAddition::BestBlock => {
-                            debug!("Adding as best block");
+                            info!(
+                                "New best block: {}",
+                                ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                            );
                             self.utxo_manager.register_block(&lblock)?;
                             if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
                                 BroadcastMessage::BestBlock(
