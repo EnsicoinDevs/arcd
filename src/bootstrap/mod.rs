@@ -77,7 +77,7 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
             flags: vec!["ici cest limag".to_string()],
             prev_block: Sha256Result::from([0; 32]),
             merkle_root: Sha256Result::from([0; 32]),
-            timestamp: 1566862920,
+            timestamp: 1558540052,
             nonce: 42,
             height: 0,
             target: Sha256Result::from([

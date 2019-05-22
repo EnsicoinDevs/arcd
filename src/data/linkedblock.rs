@@ -41,7 +41,10 @@ impl LinkedBlock {
             txs: txs.into_iter().map(|txs| txs.transaction).collect(),
         }
     }
-    pub fn is_valid(&self, target: num_bigint::BigUint) -> bool {
+    pub fn is_valid(&self, target: num_bigint::BigUint, previous_height: u32) -> bool {
+        if self.header.height != previous_height + 1 {
+            return false;
+        };
         if num_bigint::BigUint::from_bytes_be(&self.header.target) != target {
             return false;
         };

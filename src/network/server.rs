@@ -19,7 +19,7 @@ const CHANNEL_CAPACITY: usize = 1_024;
 
 pub struct Server {
     broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
-    connection_receiver: FullMessageStream,
+    connection_receiver: Box<futures::Stream<Item = ConnectionMessage, Error = Error> + Send>,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
@@ -76,15 +76,8 @@ fn channel_errore_converter(_: ()) -> Error {
 }
 
 type NewSocketConverter = fn(tokio::net::TcpStream) -> ConnectionMessage;
-type NewConnectionStream = futures::stream::Map<tokio::net::tcp::Incoming, NewSocketConverter>;
 type IoErrorConverter = fn(std::io::Error) -> Error;
-type NewConnectionStreamErrored = futures::stream::MapErr<NewConnectionStream, IoErrorConverter>;
 type ChannelErrorConverter = fn(()) -> Error;
-type ServerMessageErrored = futures::stream::MapErr<
-    futures::sync::mpsc::Receiver<ConnectionMessage>,
-    ChannelErrorConverter,
->;
-type FullMessageStream = futures::stream::Select<ServerMessageErrored, NewConnectionStreamErrored>;
 
 impl Server {
     fn send(&mut self, dest: String, msg: crate::data::intern_messages::ServerMessage) {
@@ -107,12 +100,16 @@ impl Server {
             .incoming()
             .map(new_socket_converter as NewSocketConverter)
             .map_err(io_error_converter as IoErrorConverter);
-        let message_stream = receiver
-            .map_err(channel_errore_converter as ChannelErrorConverter)
-            .select(inbound_connection_stream);
+        let message_stream = Box::new(
+            receiver
+                .map_err(channel_errore_converter as ChannelErrorConverter)
+                .select(inbound_connection_stream),
+        );
+
+        let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
 
         let server = Server {
-            broadcast_channel: Arc::new(RwLock::from(Bus::new(30))),
+            broadcast_channel,
             connections: std::collections::HashMap::new(),
             connection_receiver: message_stream,
             connection_sender: sender,
@@ -138,6 +135,13 @@ impl Server {
             grpc_port,
         );
         tokio::run(rpc.join(server).map(|_| ()));
+    }
+
+    fn broadcast_to_connections(&mut self, message: ServerMessage) {
+        let remotes: Vec<_> = self.connections.keys().map(|r| r.clone()).collect();
+        for remote in remotes {
+            self.send(remote.clone(), message.clone());
+        }
     }
 
     fn handle_message(&mut self, message: ConnectionMessage) -> Result<(), Error> {
@@ -235,6 +239,7 @@ impl Server {
                 self.mempool.write().unwrap().insert(ltx);
             }
             ConnectionMessage::NewBlock(block, source) => {
+                info!("Handling block of height: {}", block.header.height);
                 let mut lblock = LinkedBlock::new(block);
                 let hash = lblock.header.double_hash();
                 self.utxo_manager.link_block(&mut lblock);
@@ -246,11 +251,33 @@ impl Server {
                     "Validating block {}",
                     ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                 );
-                if lblock.is_valid(new_target) {
+                let prev_block = match self
+                    .blockchain
+                    .read()?
+                    .get_block(&lblock.header.prev_block)?
+                {
+                    Some(b) => b,
+                    None => {
+                        warn!(
+                            "Orphan block: {}",
+                            ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                        );
+                        return Ok(());
+                    }
+                };
+                if lblock.is_valid(new_target, prev_block.header.height) {
+                    let (t, v) = ensicoin_messages::message::Inv {
+                        inventory: vec![ensicoin_messages::message::InvVect {
+                            hash: lblock.header.double_hash(),
+                            data_type: ensicoin_messages::message::ResourceType::Block,
+                        }],
+                    }
+                    .raw_bytes();
+                    self.broadcast_to_connections(ServerMessage::SendMessage(t, v));
                     let addition = self.blockchain.write()?.new_block(lblock.clone())?;
                     match addition {
                         NewAddition::Fork => {
-                            debug!("Handling fork");
+                            info!("Handling fork");
                             self.utxo_manager.register_block(&lblock)?;
                             self.mempool.write()?.remove_tx(&lblock);
                             let best_block = self.blockchain.read()?.best_block_hash()?;
@@ -319,7 +346,9 @@ impl Server {
                                 error!("Could not broadcast");
                             }
                         }
-                        _ => (),
+                        NewAddition::Nothing => {
+                            info!("Added block to a sidechain");
+                        }
                     }
                 } else {
                     warn!("Recieved invalid Block from {}", source);

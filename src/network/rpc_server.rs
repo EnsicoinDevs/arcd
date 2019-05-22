@@ -292,7 +292,7 @@ impl node::server::Node for RPCNode {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs();
-                let height = block.header.height;
+                let height = block.header.height + 1;
                 let prev_block = block.header.double_hash();
                 let flags = Vec::new();
                 let version = crate::constants::VERSION;

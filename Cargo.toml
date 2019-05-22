@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 futures = "^0.1"
-ensicoin_serializer = "^2.0.0"
+ensicoin_serializer = { version = "^2.0.0", features = [] }
 ensicoin_serializer_derive = "^0.2"
 tokio = "^0.1"
 tokio-timer = "^0.2"
@@ -24,8 +24,8 @@ generic-array = {version = "^0.13.0", features = ["serde"] }
 typenum = "^1.10.0"
 prost = "^0.5.0"
 bytes = "^0.4.12"
-tower-grpc = { path = "../tower/tower-grpc/tower-grpc", features= ["tower-hyper"] }
-tower-hyper = { path = "../tower/tower-hyper" }
+tower-grpc = { path = "../../tower/tower-grpc/tower-grpc", features= ["tower-hyper"] }
+tower-hyper = { path = "../../tower/tower-hyper" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ensicoin_messages = "^0.3"

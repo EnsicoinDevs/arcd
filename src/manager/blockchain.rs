@@ -275,15 +275,22 @@ impl Blockchain {
         hash2: Sha256Result,
     ) -> Result<Option<Sha256Result>, Error> {
         if !self.exists(&hash1)? || !self.exists(&hash2)? {
+            info!("One does not exist");
             return Ok(None);
         };
         let mut block1 = match self.get_block(&hash1)? {
             Some(b) => b,
-            None => return Ok(None),
+            None => {
+                info!("Orphan block");
+                return Ok(None);
+            }
         };
         let mut block2 = match self.get_block(&hash2)? {
             Some(b) => b,
-            None => return Ok(None),
+            None => {
+                info!("Orphan block");
+                return Ok(None);
+            }
         };
         if block2.header.height > block1.header.height {
             std::mem::swap(&mut block1, &mut block2);
@@ -293,21 +300,34 @@ impl Blockchain {
             while block1.header.height != block2.header.height {
                 block1 = match self.get_block(&block1.header.prev_block)? {
                     Some(b) => b,
-                    None => return Ok(None),
+                    None => {
+                        info!("Orphan chain");
+                        return Ok(None);
+                    }
                 }
             }
         };
+        dbg!(&block1.header);
+        dbg!(&block2.header);
         while block1.double_hash() != block2.double_hash() {
             block1 = match self.get_block(&block1.header.prev_block)? {
                 Some(b) => b,
-                None => return Ok(None),
+                None => {
+                    info!("No merge point");
+                    return Ok(None);
+                }
             };
-            block2 = match self.get_block(&block1.header.prev_block)? {
+            block2 = match self.get_block(&block2.header.prev_block)? {
                 Some(b) => b,
-                None => return Ok(None),
+                None => {
+                    info!("No merge point");
+                    return Ok(None);
+                }
             };
+            dbg!(&block1.header);
+            dbg!(&block2.header);
         }
-        if block1.double_hash() == block1.double_hash() {
+        if block1.double_hash() == block2.double_hash() {
             Ok(Some(block1.double_hash()))
         } else {
             Ok(None)
