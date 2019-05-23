@@ -1,5 +1,7 @@
 use crate::data::{linkedtx::LinkedTransaction, PairedUtxo};
 use ensicoin_messages::resource::{Block, BlockHeader};
+use ensicoin_serializer::Sha256Result;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone)]
 pub struct LinkedBlock {
@@ -7,7 +9,56 @@ pub struct LinkedBlock {
     pub txs: Vec<LinkedTransaction>,
 }
 
+fn double_hash(hash_a: Sha256Result, hash_b: Sha256Result) -> Sha256Result {
+    let mut hasher = Sha256::default();
+
+    let mut vec_hash = hash_a.to_vec();
+    vec_hash.extend_from_slice(&hash_b);
+    hasher.input(vec_hash);
+    let first = hasher.result();
+    hasher = Sha256::default();
+    hasher.input(first);
+
+    hasher.result()
+}
+
 impl LinkedBlock {
+    pub fn merkle_root(&self) -> Sha256Result {
+        let mut resources: Vec<_> = self
+            .txs
+            .iter()
+            .map(|tx| tx.transaction.double_hash())
+            .collect();
+        if resources.len() == 0 {
+            return Sha256Result::from([0; 32]);
+        };
+
+        if resources.len() == 1 {
+            resources.push(resources[0]);
+        };
+
+        while resources.len() > 1 {
+            if resources.len() % 2 != 0 {
+                resources.push(resources.last().unwrap().clone());
+            }
+
+            let mut left_hash = resources[0];
+            for i in 0..resources.len() {
+                let hash = resources[i];
+
+                if i % 2 == 0 {
+                    left_hash = hash;
+                } else {
+                    resources[((i + 1) / 2) - 1] = double_hash(left_hash, hash);
+                }
+            }
+
+            resources.split_off(resources.len() / 2);
+        }
+
+        resources[0]
+    }
+
     pub fn new(block: Block) -> LinkedBlock {
         let txs = block.txs;
         let header = block.header;
@@ -48,6 +99,9 @@ impl LinkedBlock {
         if num_bigint::BigUint::from_bytes_be(&self.header.target) != target {
             return false;
         };
+        if self.header.merkle_root != self.merkle_root() {
+            return false;
+        }
         for tx in &self.txs[1..] {
             if !tx.is_complete() {
                 return false;
