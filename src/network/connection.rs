@@ -19,7 +19,7 @@ use ensicoin_messages::{
 
 type ConnectionSender = mpsc::Sender<ConnectionMessage>;
 
-const CHANNEL_CAPACITY: usize = 1_024;
+const CHANNEL_CAPACITY: usize = 2_048;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum State {
@@ -36,44 +36,12 @@ impl std::fmt::Display for State {
     }
 }
 
-fn channel_stream_error_converter(_: ()) -> Error {
-    Error::ChannelError
-}
-fn raw_message_converter(raw_message: RawMessage) -> ServerMessage {
-    let (t, v) = raw_message;
-    ServerMessage::HandleMessage(t, v)
-}
-fn ticker_converter(_: std::time::Instant) -> ServerMessage {
-    ServerMessage::Tick
-}
-fn timer_error_converter(e: tokio_timer::Error) -> Error {
-    Error::TimerError(e)
-}
-
-type ChannelStream = futures::sync::mpsc::Receiver<ServerMessage>;
-type ChannelStreamErrorConverter = fn(()) -> Error;
-type ChannelStreamErrored = stream::MapErr<ChannelStream, ChannelStreamErrorConverter>;
-type MessageFramedTcpStream = tokio::codec::Framed<TcpStream, MessageCodec>;
-type RawMessage = (message::MessageType, BytesMut);
-type RawMessageConverter = fn(RawMessage) -> ServerMessage;
-type RawMessageStream = stream::Map<MessageStream, RawMessageConverter>;
-type PartStream = stream::Select<ChannelStreamErrored, RawMessageStream>;
-type TimerStream = tokio_timer::Interval;
-type TickerConverter = fn(std::time::Instant) -> ServerMessage;
-type TickerStream = stream::Map<TimerStream, TickerConverter>;
-type TimerErrorConverter = fn(tokio_timer::Error) -> Error;
-type TickerStreamErrored = stream::MapErr<TickerStream, TimerErrorConverter>;
-type ConnectionStream = stream::Select<PartStream, TickerStreamErrored>;
-
-type MessageStream = futures::stream::SplitStream<MessageFramedTcpStream>;
-type MessageSink = futures::stream::SplitSink<MessageFramedTcpStream>;
-
 pub struct Connection {
     state: State,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     server_sender: mpsc::Sender<ServerMessage>,
-    message_stream: ConnectionStream,
-    message_sink: MessageSink,
+    message_stream: Box<futures::Stream<Item = ServerMessage, Error = Error> + Send>,
+    message_sink: Box<Sink<SinkItem = Bytes, SinkError = Error> + Send>,
     message_buffer: std::collections::VecDeque<(MessageType, Bytes)>,
     server_buffer: std::collections::VecDeque<ConnectionMessage>,
     version: u32,
@@ -282,18 +250,21 @@ impl Connection {
             tokio::codec::Framed::new(stream, MessageCodec::new()).split();
 
         let timer = tokio_timer::Interval::new_interval(std::time::Duration::from_secs(42))
-            .map(ticker_converter as TickerConverter)
-            .map_err(timer_error_converter as TimerErrorConverter);
+            .map(|_| ServerMessage::Tick)
+            .map_err(|e| Error::TimerError(e));
 
         let message_stream = reciever
-            .map_err(channel_stream_error_converter as ChannelStreamErrorConverter)
-            .select(message_stream.map(raw_message_converter as RawMessageConverter))
+            .map_err(|_| Error::ChannelError)
+            .select(message_stream.map(|raw| {
+                let (t, v) = raw;
+                ServerMessage::HandleMessage(t, v)
+            }))
             .select(timer);
 
         Connection {
             state: State::Idle,
-            message_stream: message_stream,
-            message_sink: message_sink,
+            message_stream: Box::new(message_stream),
+            message_sink: Box::new(message_sink),
             message_buffer: std::collections::VecDeque::new(),
             server_buffer: std::collections::VecDeque::new(),
             version: crate::constants::VERSION,

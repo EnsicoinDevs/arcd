@@ -61,24 +61,6 @@ impl futures::Future for Server {
     }
 }
 
-fn new_socket_converter(socket: tokio::net::TcpStream) -> ConnectionMessage {
-    trace!(
-        "Connection picked up: {}",
-        socket.peer_addr().unwrap().to_string()
-    );
-    ConnectionMessage::NewConnection(socket)
-}
-fn io_error_converter(e: std::io::Error) -> Error {
-    Error::from(e)
-}
-fn channel_errore_converter(_: ()) -> Error {
-    Error::ChannelError
-}
-
-type NewSocketConverter = fn(tokio::net::TcpStream) -> ConnectionMessage;
-type IoErrorConverter = fn(std::io::Error) -> Error;
-type ChannelErrorConverter = fn(()) -> Error;
-
 impl Server {
     fn send(&mut self, dest: String, msg: crate::data::intern_messages::ServerMessage) {
         self.connection_buffer.push_back((dest, msg));
@@ -98,11 +80,17 @@ impl Server {
                 .unwrap();
         let inbound_connection_stream = listener
             .incoming()
-            .map(new_socket_converter as NewSocketConverter)
-            .map_err(io_error_converter as IoErrorConverter);
+            .map(|socket| {
+                trace!(
+                    "Picked up connection: {}",
+                    socket.peer_addr().unwrap().to_string()
+                );
+                ConnectionMessage::NewConnection(socket)
+            })
+            .map_err(|e| Error::from(e));
         let message_stream = Box::new(
             receiver
-                .map_err(channel_errore_converter as ChannelErrorConverter)
+                .map_err(|_| Error::ChannelError)
                 .select(inbound_connection_stream),
         );
 
