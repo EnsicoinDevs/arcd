@@ -102,6 +102,16 @@ impl LinkedBlock {
         if self.header.merkle_root != self.merkle_root() {
             return false;
         }
+        if self.txs[0].transaction.flags.len() == 0 {
+            return false;
+        };
+        let coinbase_height: u32 = match self.txs[0].transaction.flags[0].parse() {
+            Ok(n) => n,
+            Err(_) => return false,
+        };
+        if coinbase_height != self.header.height {
+            return false;
+        };
         for tx in &self.txs[1..] {
             if !tx.is_complete() {
                 return false;
