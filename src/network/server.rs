@@ -302,7 +302,7 @@ impl Server {
                                 self.utxo_manager.register_block(lb)?;
                             }
                             self.blockchain.write()?.add_chain(linked_chain)?;
-                            info!(
+                            trace!(
                                 "New best block after fork: {}",
                                 ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                             );
@@ -318,7 +318,7 @@ impl Server {
                             }
                         }
                         NewAddition::BestBlock => {
-                            info!(
+                            trace!(
                                 "New best block: {}",
                                 ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                             );

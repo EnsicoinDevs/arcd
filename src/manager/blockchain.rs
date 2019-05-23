@@ -307,8 +307,6 @@ impl Blockchain {
                 }
             }
         };
-        dbg!(&block1.header);
-        dbg!(&block2.header);
         while block1.double_hash() != block2.double_hash() {
             block1 = match self.get_block(&block1.header.prev_block)? {
                 Some(b) => b,
@@ -324,8 +322,6 @@ impl Blockchain {
                     return Ok(None);
                 }
             };
-            dbg!(&block1.header);
-            dbg!(&block2.header);
         }
         if block1.double_hash() == block2.double_hash() {
             Ok(Some(block1.double_hash()))
@@ -542,10 +538,8 @@ impl Blockchain {
         let mut remaining = Vec::new();
         let mut blocks = Vec::new();
         for inv_vect in inv {
-            dbg!(&inv_vect.data_type);
             match inv_vect.data_type {
                 ensicoin_messages::message::ResourceType::Block => {
-                    dbg!(hash_to_string(&inv_vect.hash));
                     if let Some(b) = self.get_block(&inv_vect.hash)? {
                         blocks.push(b);
                     }
