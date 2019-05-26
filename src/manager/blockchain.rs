@@ -71,7 +71,7 @@ impl Blockchain {
 
     pub fn block_after(&self, hash: &Sha256Result) -> Result<Option<Sha256Result>, Error> {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
-            match self.reverse_chain.get(&hash.serialize())? {
+            match self.reverse_chain.get(&hash)? {
                 Some(b) => (*b).to_owned(),
                 None => return Ok(None),
             },
@@ -83,7 +83,7 @@ impl Blockchain {
 
     fn get_work(&self, hash: &Sha256Result) -> Result<BigUint, Error> {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
-            match self.work.get(&hash.serialize())? {
+            match self.work.get(&hash)? {
                 Some(b) => (*b).to_owned(),
                 None => return Err(Error::NotFound(format!("work {}", hash_to_string(&hash)))),
             },
@@ -96,7 +96,7 @@ impl Blockchain {
     pub fn get_block(&self, hash: &Sha256Result) -> Result<Option<Block>, Error> {
         debug!("Getting block from db");
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
-            match self.database.get(&hash.serialize())? {
+            match self.database.get(&hash)? {
                 Some(b) => (*b).to_owned(),
                 None => return Ok(None),
             },
@@ -109,7 +109,7 @@ impl Blockchain {
 
     pub fn block_2016_before(&self, hash: &Sha256Result) -> Result<Sha256Result, Error> {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
-            match self.past_block.get(&hash.serialize())? {
+            match self.past_block.get(&hash)? {
                 Some(b) => (*b).to_owned(),
                 None => {
                     return Err(Error::NotFound(format!(
@@ -374,12 +374,11 @@ impl Blockchain {
         let block = block.to_block();
         let raw_block = block.serialize().to_vec();
         let hash = block.header.double_hash();
-        if block.header.height == 2016 {
+        if block.header.height == 2015 {
             let genesis_hash = self.genesis_hash()?;
-            let first_block_hash = self.block_after(&genesis_hash)?.unwrap();
             self.past_block
-                .set(hash, first_block_hash.serialize().to_vec())?;
-        } else if block.header.height > 2016 {
+                .set(hash, genesis_hash.serialize().to_vec())?;
+        } else if block.header.height >= 2016 {
             let past_of_previous = self.block_2016_before(&block.header.prev_block)?;
             let next = self.block_after(&past_of_previous)?.unwrap();
             self.past_block.set(hash, next.serialize().to_vec())?;
@@ -387,7 +386,8 @@ impl Blockchain {
         self.work
             .set(hash, chain_work.to_bytes_be().serialize().to_vec())?;
         self.database.set(hash, raw_block.clone())?;
-        self.reverse_chain.set(block.header.prev_block, raw_block)?;
+        self.reverse_chain
+            .set(block.header.prev_block, hash.serialize().to_vec())?;
         self.spent_tx.set(hash, spent_utxo)?;
         self.set_best_block(hash.clone())?;
         Ok(())
@@ -459,7 +459,7 @@ impl Blockchain {
     pub fn pop_best_block(&mut self) -> Result<PopContext, Error> {
         let best_block = self.best_block_hash()?;
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
-            match self.spent_tx.get(&best_block.serialize())? {
+            match self.spent_tx.get(&best_block)? {
                 Some(b) => (*b).to_owned(),
                 None => {
                     return Err(Error::NotFound(format!(
@@ -470,8 +470,7 @@ impl Blockchain {
             },
         ));
         let best_block = self.get_block(&best_block)?.unwrap();
-        self.reverse_chain
-            .del(&best_block.header.prev_block.serialize().to_vec())?;
+        self.reverse_chain.del(&best_block.header.prev_block)?;
         self.unset_best_block()?;
         self.stats.set(
             "best_block",
@@ -513,12 +512,15 @@ impl Blockchain {
 
             let old_target = BigUint::from_bytes_be(&best_block.header.target);
             let mut time_diff = timestamp - ancestor.header.timestamp;
+            dbg!(time_diff);
             if time_diff > 4 * TIME_BEETWEEN_BLOCKS {
                 time_diff = 4 * TIME_BEETWEEN_BLOCKS
             } else if time_diff < TIME_BEETWEEN_BLOCKS / 4 {
                 time_diff = TIME_BEETWEEN_BLOCKS / 4
             };
+            dbg!(time_diff);
             let refactor_target = time_diff / TIME_BEETWEEN_BLOCKS;
+            dbg!(refactor_target);
             Ok(old_target * BigUint::from(refactor_target))
         } else {
             Ok(BigUint::from_bytes_be(&ancestor.header.target))

@@ -15,7 +15,7 @@ use crate::{
 };
 use std::sync::{Arc, RwLock};
 
-const CHANNEL_CAPACITY: usize = 1_024;
+const CHANNEL_CAPACITY: usize = 2_048;
 
 pub struct Server {
     broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
