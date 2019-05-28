@@ -501,7 +501,7 @@ impl Blockchain {
 
         let best_block = self.get_block(&self.best_block_hash()?)?.unwrap();
         let mut ancestor = self.get_block(&self.genesis_hash()?)?.unwrap();
-        if best_block.header.height >= 2016 {
+        if best_block.header.height >= 2015 {
             ancestor = self
                 .get_block(
                     &self
@@ -512,16 +512,12 @@ impl Blockchain {
 
             let old_target = BigUint::from_bytes_be(&best_block.header.target);
             let mut time_diff = timestamp - ancestor.header.timestamp;
-            dbg!(time_diff);
             if time_diff > 4 * TIME_BEETWEEN_BLOCKS {
                 time_diff = 4 * TIME_BEETWEEN_BLOCKS
             } else if time_diff < TIME_BEETWEEN_BLOCKS / 4 {
                 time_diff = TIME_BEETWEEN_BLOCKS / 4
             };
-            dbg!(time_diff);
-            let refactor_target = time_diff / TIME_BEETWEEN_BLOCKS;
-            dbg!(refactor_target);
-            Ok(old_target * BigUint::from(refactor_target))
+            Ok((old_target * BigUint::from(time_diff)) / BigUint::from(TIME_BEETWEEN_BLOCKS))
         } else {
             Ok(BigUint::from_bytes_be(&ancestor.header.target))
         }

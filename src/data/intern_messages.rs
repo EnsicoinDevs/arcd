@@ -6,6 +6,7 @@ use ensicoin_messages::{
 };
 use futures::sync::mpsc;
 
+#[derive(Hash, Eq, PartialEq)]
 pub enum Source {
     Connection(String),
     RPC,

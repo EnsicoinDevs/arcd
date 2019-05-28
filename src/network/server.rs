@@ -9,7 +9,7 @@ use crate::{
         linkedblock::LinkedBlock,
         linkedtx::LinkedTransaction,
     },
-    manager::{Blockchain, Mempool, NewAddition, UtxoManager},
+    manager::{Blockchain, Mempool, NewAddition, OrphanBlockManager, UtxoManager},
     network::{Connection, RPCNode},
     Error,
 };
@@ -29,6 +29,7 @@ pub struct Server {
     collection_count: u64,
     max_connections_count: u64,
     sync_counter: u64,
+    orphan_manager: OrphanBlockManager,
 }
 
 impl futures::Future for Server {
@@ -108,6 +109,7 @@ impl Server {
             mempool: Arc::new(RwLock::new(Mempool::new())),
             connection_buffer: std::collections::VecDeque::new(),
             sync_counter: 3,
+            orphan_manager: OrphanBlockManager::new(),
         };
         info!("Node created, listening on port {}", port);
         let rpc = RPCNode::new(
@@ -227,120 +229,7 @@ impl Server {
                 self.mempool.write().unwrap().insert(ltx);
             }
             ConnectionMessage::NewBlock(block, source) => {
-                info!("Handling block of height: {}", block.header.height);
-                let mut lblock = LinkedBlock::new(block);
-                let hash = lblock.header.double_hash();
-                self.utxo_manager.link_block(&mut lblock);
-                let new_target = self
-                    .blockchain
-                    .read()?
-                    .get_target_next_block(lblock.header.timestamp)?;
-                debug!(
-                    "Validating block {}",
-                    ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-                );
-                let prev_block = match self
-                    .blockchain
-                    .read()?
-                    .get_block(&lblock.header.prev_block)?
-                {
-                    Some(b) => b,
-                    None => {
-                        warn!(
-                            "Orphan block: {}",
-                            ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-                        );
-                        return Ok(());
-                    }
-                };
-                if lblock.is_valid(new_target, prev_block.header.height) {
-                    let (t, v) = ensicoin_messages::message::Inv {
-                        inventory: vec![ensicoin_messages::message::InvVect {
-                            hash: lblock.header.double_hash(),
-                            data_type: ensicoin_messages::message::ResourceType::Block,
-                        }],
-                    }
-                    .raw_bytes();
-                    self.broadcast_to_connections(ServerMessage::SendMessage(t, v));
-                    let addition = self.blockchain.write()?.new_block(lblock.clone())?;
-                    match addition {
-                        NewAddition::Fork => {
-                            info!("Handling fork");
-                            self.utxo_manager.register_block(&lblock)?;
-                            self.mempool.write()?.remove_tx(&lblock);
-                            let best_block = self.blockchain.read()?.best_block_hash()?;
-                            let common_hash = match self
-                                .blockchain
-                                .read()?
-                                .find_common_hash(best_block, hash.clone())?
-                            {
-                                Some(h) => h,
-                                None => return Err(Error::NotFound("merge point".to_string())),
-                            };
-                            let new_branch =
-                                self.blockchain.read()?.chain_until(&hash, &common_hash)?;
-                            let pop_contex = self.blockchain.write()?.pop_until(&common_hash)?;
-                            for utxo in pop_contex.utxo_to_remove {
-                                self.utxo_manager.delete(&utxo)?;
-                            }
-                            self.utxo_manager.restore(pop_contex.utxo_to_restore)?;
-                            for tx in pop_contex.txs_to_restore {
-                                let mut ltx = LinkedTransaction::new(tx);
-                                self.utxo_manager.link(&mut ltx);
-                                self.mempool.write()?.insert(ltx);
-                            }
-                            let block_chain =
-                                self.blockchain.read()?.chain_to_blocks(new_branch)?;
-                            let mut linked_chain: Vec<_> = block_chain
-                                .into_iter()
-                                .map(|b| LinkedBlock::new(b))
-                                .collect();
-                            linked_chain
-                                .iter_mut()
-                                .for_each(|mut lb| self.utxo_manager.link_block(&mut lb));
-                            for lb in &linked_chain {
-                                self.utxo_manager.register_block(lb)?;
-                            }
-                            self.blockchain.write()?.add_chain(linked_chain)?;
-                            trace!(
-                                "New best block after fork: {}",
-                                ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-                            );
-                            if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
-                                BroadcastMessage::BestBlock(
-                                    self.blockchain
-                                        .read()?
-                                        .get_block(&self.blockchain.read()?.best_block_hash()?)?
-                                        .unwrap(),
-                                ),
-                            ) {
-                                error!("Could not broadcast");
-                            }
-                        }
-                        NewAddition::BestBlock => {
-                            trace!(
-                                "New best block: {}",
-                                ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-                            );
-                            self.utxo_manager.register_block(&lblock)?;
-                            if let Err(_) = self.broadcast_channel.write()?.try_broadcast(
-                                BroadcastMessage::BestBlock(
-                                    self.blockchain
-                                        .read()?
-                                        .get_block(&self.blockchain.read()?.best_block_hash()?)?
-                                        .unwrap(),
-                                ),
-                            ) {
-                                error!("Could not broadcast");
-                            }
-                        }
-                        NewAddition::Nothing => {
-                            info!("Added block to a sidechain");
-                        }
-                    }
-                } else {
-                    warn!("Recieved invalid Block from {}", source);
-                }
+                self.handle_new_block(block, source)?;
             }
             ConnectionMessage::NewConnection(socket) => {
                 if self.collection_count < self.max_connections_count {
@@ -349,6 +238,136 @@ impl Server {
                     tokio::spawn(new_conn);
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn handle_new_block(
+        &mut self,
+        block: ensicoin_messages::resource::Block,
+        source: crate::data::intern_messages::Source,
+    ) -> Result<(), Error> {
+        info!("Handling block of height: {}", block.header.height);
+        let mut lblock = LinkedBlock::new(block);
+        let hash = lblock.header.double_hash();
+        self.utxo_manager.link_block(&mut lblock);
+        let new_target = self
+            .blockchain
+            .read()?
+            .get_target_next_block(lblock.header.timestamp)?;
+        debug!(
+            "Validating block {}",
+            ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+        );
+        let prev_block = match self
+            .blockchain
+            .read()?
+            .get_block(&lblock.header.prev_block)?
+        {
+            Some(b) => b,
+            None => {
+                warn!(
+                    "Orphan block: {}",
+                    ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                );
+                self.orphan_manager.add_block((source, lblock.to_block()));
+                return Ok(());
+            }
+        };
+        if lblock.is_valid(new_target, prev_block.header.height) {
+            let (t, v) = ensicoin_messages::message::Inv {
+                inventory: vec![ensicoin_messages::message::InvVect {
+                    hash: lblock.header.double_hash(),
+                    data_type: ensicoin_messages::message::ResourceType::Block,
+                }],
+            }
+            .raw_bytes();
+            self.broadcast_to_connections(ServerMessage::SendMessage(t, v));
+            let addition = self.blockchain.write()?.new_block(lblock.clone())?;
+            match addition {
+                NewAddition::Fork => {
+                    info!("Handling fork");
+                    self.utxo_manager.register_block(&lblock)?;
+                    self.mempool.write()?.remove_tx(&lblock);
+                    let best_block = self.blockchain.read()?.best_block_hash()?;
+                    let common_hash = match self
+                        .blockchain
+                        .read()?
+                        .find_common_hash(best_block, hash.clone())?
+                    {
+                        Some(h) => h,
+                        None => return Err(Error::NotFound("merge point".to_string())),
+                    };
+                    let new_branch = self.blockchain.read()?.chain_until(&hash, &common_hash)?;
+                    let pop_contex = self.blockchain.write()?.pop_until(&common_hash)?;
+                    for utxo in pop_contex.utxo_to_remove {
+                        self.utxo_manager.delete(&utxo)?;
+                    }
+                    self.utxo_manager.restore(pop_contex.utxo_to_restore)?;
+                    for tx in pop_contex.txs_to_restore {
+                        let mut ltx = LinkedTransaction::new(tx);
+                        self.utxo_manager.link(&mut ltx);
+                        self.mempool.write()?.insert(ltx);
+                    }
+                    let block_chain = self.blockchain.read()?.chain_to_blocks(new_branch)?;
+                    let mut linked_chain: Vec<_> = block_chain
+                        .into_iter()
+                        .map(|b| LinkedBlock::new(b))
+                        .collect();
+                    linked_chain
+                        .iter_mut()
+                        .for_each(|mut lb| self.utxo_manager.link_block(&mut lb));
+                    for lb in &linked_chain {
+                        self.utxo_manager.register_block(lb)?;
+                    }
+                    self.blockchain.write()?.add_chain(linked_chain)?;
+                    trace!(
+                        "New best block after fork: {}",
+                        ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                    );
+                    if let Err(_) =
+                        self.broadcast_channel
+                            .write()?
+                            .try_broadcast(BroadcastMessage::BestBlock(
+                                self.blockchain
+                                    .read()?
+                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                    .unwrap(),
+                            ))
+                    {
+                        error!("Could not broadcast");
+                    }
+                }
+                NewAddition::BestBlock => {
+                    trace!(
+                        "New best block: {}",
+                        ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                    );
+                    self.utxo_manager.register_block(&lblock)?;
+                    if let Err(_) =
+                        self.broadcast_channel
+                            .write()?
+                            .try_broadcast(BroadcastMessage::BestBlock(
+                                self.blockchain
+                                    .read()?
+                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                    .unwrap(),
+                            ))
+                    {
+                        error!("Could not broadcast");
+                    }
+                }
+                NewAddition::Nothing => {
+                    info!("Added block to a sidechain");
+                }
+            }
+        } else {
+            warn!("Recieved invalid Block from {}", source);
+        }
+        let best_block_hash = self.blockchain.read()?.best_block_hash()?;
+        let orphan_chain = self.orphan_manager.retrieve_chain(best_block_hash);
+        for (s, b) in orphan_chain {
+            self.handle_new_block(b, s)?;
         }
         Ok(())
     }
