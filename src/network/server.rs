@@ -1,3 +1,4 @@
+use crate::bootstrap::irc_listener;
 use ensicoin_messages::message::Message;
 use futures::sync::mpsc;
 use tokio::{net::TcpListener, prelude::*};
@@ -124,6 +125,12 @@ impl Server {
             },
             grpc_port,
         );
+        match irc_listener() {
+            Ok((_, addrs)) => (),
+            Err(e) => {
+                warn!("Could not connect to irc bootstraper: {:?}", e);
+            }
+        };
         tokio::run(rpc.join(server).map(|_| ()));
     }
 
