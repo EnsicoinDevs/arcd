@@ -125,13 +125,13 @@ impl Server {
             },
             grpc_port,
         );
-        match irc_listener(server.connection_sender.clone()) {
-            Ok(irc) => tokio::run(rpc.join(server).join(irc).map(|_| ())),
+        match irc_listener() {
+            Ok((_, addrs)) => (),
             Err(e) => {
                 warn!("Could not connect to irc bootstraper: {:?}", e);
-                tokio::run(rpc.join(server).map(|_| ()));
             }
         };
+        tokio::run(rpc.join(server).map(|_| ()));
     }
 
     fn broadcast_to_connections(&mut self, message: ServerMessage) {

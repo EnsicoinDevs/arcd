@@ -1,9 +1,8 @@
 use crate::constants;
-use crate::data::intern_messages::ConnectionMessage;
+use std::io::prelude::*;
+use std::io::BufReader;
 use std::net::ToSocketAddrs;
-use tokio::codec::LinesCodec;
-use tokio::net::TcpStream;
-use tokio::prelude::*;
+use std::net::{SocketAddr, TcpStream};
 
 #[derive(Debug)]
 pub enum IrcError {
@@ -17,36 +16,42 @@ impl From<std::io::Error> for IrcError {
     }
 }
 
-pub fn irc_listener(
-    _server_sender: futures::sync::mpsc::Sender<ConnectionMessage>,
-) -> Result<impl Future<Item = (), Error = ()>, IrcError> {
+pub fn irc_listener() -> Result<(TcpStream, Vec<SocketAddr>), IrcError> {
     let freenode_addr = match "irc.freenode.net:6667".to_socket_addrs()?.next() {
         Some(a) => a,
         None => return Err(IrcError::UnresolvedHostname),
     };
     let nick = format!(
-        "{}_{}:{}",
-        constants::MAGIC,
-        constants::IP,
-        constants::DEFAULT_PORT
+        "XEC{}_{:x}",
+        constants::HEX_IP,
+        constants::DEFAULT_PORT.parse::<u16>().unwrap(),
     );
-    Ok(TcpStream::connect(&freenode_addr)
-        .map(|stream| tokio::codec::Framed::new(stream, LinesCodec::new()))
-        .map(move |frame| {
-            frame
-                .send_all(stream::iter_ok::<_, std::io::Error>(vec![
-                    format!("NICK {}", nick),
-                    format!("USER {} 0 x : {}", nick, nick),
-                    format!("JOIN #ensicoin"),
-                ]))
-                .and_then(|(_, stream)| {
-                    info!("Connected to the IRC channel");
-                    stream.for_each(|message| {
-                        println!("Message: {}", message);
-                        Ok(())
-                    })
-                })
-        })
-        .map_err(|err| println!("Err: {}", err))
-        .and_then(|_| Ok(())))
+    let mut irc_stream = TcpStream::connect(&freenode_addr)?;
+    irc_stream.write(format!("NICK {}\r\n", nick).as_bytes())?;
+    irc_stream.write(format!("USER {} 0 x : {}\r\n", nick, nick).as_bytes())?;
+    irc_stream.write(format!("JOIN #ensicoin\r\n").as_bytes())?;
+    let reader = BufReader::new(irc_stream.try_clone()?);
+
+    let mut irc_peers = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        let mut split_line = line.split(" ");
+        let reply_slot = split_line.nth(1);
+        if let Some("353") = reply_slot {
+            for user in split_line.skip(4) {
+                if user.starts_with("XEC") {
+                    println!("Remote: {}", user);
+                    irc_peers.push(user.clone().to_owned());
+                }
+            }
+        } else if let Some("366") = reply_slot {
+            debug!("[IRC] finished reading names");
+            break;
+        } else {
+            trace!("[IRC] {}", line);
+        }
+    }
+    info!("[IRC] Found {} peers", irc_peers.len());
+    Ok((irc_stream, Vec::new()))
 }
