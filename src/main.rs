@@ -49,8 +49,6 @@ extern crate tower_hyper;
 
 extern crate tokio_bus;
 
-extern crate irc;
-
 use std::io;
 
 fn main() {
@@ -65,7 +63,12 @@ fn main() {
     } else {
         simplelog::LevelFilter::Info
     };
-    simplelog::TermLogger::init(log_level, simplelog::Config::default()).unwrap();
+    simplelog::TermLogger::init(
+        log_level,
+        simplelog::Config::default(),
+        simplelog::TerminalMode::Mixed,
+    )
+    .unwrap();
 
     let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
     std::fs::create_dir_all(&data_dir).unwrap();
