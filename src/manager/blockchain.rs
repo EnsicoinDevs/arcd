@@ -77,8 +77,8 @@ impl Blockchain {
             },
         ));
         Sha256Result::deserialize(&mut de)
-            .map(|h| Some(h))
-            .map_err(|e| Error::ParseError(e))
+            .map(Some)
+            .map_err(Error::ParseError)
     }
 
     fn get_work(&self, hash: &Sha256Result) -> Result<BigUint, Error> {
@@ -90,7 +90,7 @@ impl Blockchain {
         ));
         Vec::deserialize(&mut de)
             .map(|b| BigUint::from_bytes_be(&b))
-            .map_err(|e| Error::ParseError(e))
+            .map_err(Error::ParseError)
     }
 
     pub fn get_block(&self, hash: &Sha256Result) -> Result<Option<Block>, Error> {
@@ -101,7 +101,7 @@ impl Blockchain {
                 None => return Ok(None),
             },
         ));
-        Block::deserialize(&mut de).map(|h| Some(h)).map_err(|e| {
+        Block::deserialize(&mut de).map(Some).map_err(|e| {
             warn!("Error parsing block {} from db", hash_to_string(hash));
             Error::ParseError(e)
         })
@@ -119,7 +119,7 @@ impl Blockchain {
                 }
             },
         ));
-        Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
+        Sha256Result::deserialize(&mut de).map_err(Error::ParseError)
     }
 
     pub fn best_block_hash(&self) -> Result<Sha256Result, Error> {
@@ -129,7 +129,7 @@ impl Blockchain {
                 None => return Err(Error::NotFound("best_block".to_string())),
             },
         ));
-        Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
+        Sha256Result::deserialize(&mut de).map_err(Error::ParseError)
     }
 
     pub fn genesis_hash(&self) -> Result<Sha256Result, Error> {
@@ -139,7 +139,7 @@ impl Blockchain {
                 None => return Err(Error::NotFound("genesis_block".to_string())),
             },
         ));
-        Sha256Result::deserialize(&mut de).map_err(|e| Error::ParseError(e))
+        Sha256Result::deserialize(&mut de).map_err(Error::ParseError)
     }
 
     fn set_best_block(&mut self, hash: Sha256Result) -> Result<(), Error> {
@@ -199,7 +199,7 @@ impl Blockchain {
     pub fn exists(&self, hash: &ensicoin_serializer::Sha256Result) -> Result<bool, Error> {
         self.database
             .contains_key(hash)
-            .map_err(|e| Error::DatabaseError(e))
+            .map_err(Error::DatabaseError)
     }
 
     pub fn get_unknown_blocks(
@@ -229,11 +229,11 @@ impl Blockchain {
 
     pub fn find_last_common_block(
         &self,
-        block_locator: &Vec<ensicoin_serializer::Sha256Result>,
+        block_locator: &[ensicoin_serializer::Sha256Result],
     ) -> Result<Option<Sha256Result>, Error> {
         for hash in block_locator.iter() {
             if self.exists(hash)? {
-                return Ok(Some(hash.clone()));
+                return Ok(Some(*hash));
             }
         }
         Ok(None)
@@ -251,7 +251,7 @@ impl Blockchain {
             None => return Ok(inv),
         };
         let uptil = if self.exists(&get_blocks.stop_hash)? {
-            get_blocks.stop_hash.clone()
+            get_blocks.stop_hash
         } else if get_blocks.stop_hash.iter().all(|b| *b == 0) {
             self.best_block_hash()?
         } else {
@@ -339,7 +339,7 @@ impl Blockchain {
             if block.header.prev_block == best_hash || chain_work > best_work {
                 if block.header.prev_block != best_hash {
                     self.database
-                        .set(hash, block.to_block().serialize().to_vec())?;
+                        .set(hash, block.into_block().serialize().to_vec())?;
                     self.work
                         .set(hash, chain_work.to_bytes_be().serialize().to_vec())?;
                     NewAddition::Fork
@@ -349,7 +349,7 @@ impl Blockchain {
                 }
             } else {
                 self.database
-                    .set(hash, block.to_block().serialize().to_vec())?;
+                    .set(hash, block.into_block().serialize().to_vec())?;
                 self.work
                     .set(hash, chain_work.to_bytes_be().serialize().to_vec())?;
                 NewAddition::Nothing
@@ -371,7 +371,7 @@ impl Blockchain {
         );
         let chain_work = self.get_work(&block.header.prev_block)? + block.work();
         let spent_utxo = block.spent_utxo().serialize().to_vec();
-        let block = block.to_block();
+        let block = block.into_block();
         let raw_block = block.serialize().to_vec();
         let hash = block.header.double_hash();
         if block.header.height == 2015 {
@@ -389,7 +389,7 @@ impl Blockchain {
         self.reverse_chain
             .set(block.header.prev_block, hash.serialize().to_vec())?;
         self.spent_tx.set(hash, spent_utxo)?;
-        self.set_best_block(hash.clone())?;
+        self.set_best_block(hash)?;
         Ok(())
     }
 
@@ -483,7 +483,7 @@ impl Blockchain {
             let tx_hash = tx.double_hash();
             for i in 0..tx.outputs.len() {
                 utxo_to_remove.push(Outpoint {
-                    hash: tx_hash.clone(),
+                    hash: tx_hash,
                     index: (i as u32),
                 })
             }

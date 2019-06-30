@@ -73,7 +73,7 @@ fn block_to_rpc(block: ensicoin_messages::resource::Block) -> Block {
         timestamp: block.header.timestamp,
         height: block.header.height,
         target: block.header.target.to_vec(),
-        txs: block.txs.into_iter().map(|tx| tx_to_rpc(tx)).collect(),
+        txs: block.txs.into_iter().map(tx_to_rpc).collect(),
     }
 }
 
@@ -94,14 +94,14 @@ impl State {
 }
 
 impl RPCNode {
-    pub fn new(
+    pub fn server(
         broadcast: Arc<RwLock<Bus<BroadcastMessage>>>,
         mempool: Arc<RwLock<Mempool>>,
         blockchain: Arc<RwLock<Blockchain>>,
         sender: futures::sync::mpsc::Sender<ConnectionMessage>,
         bind_address: &str,
         port: u16,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let handler = RPCNode {
             state: Arc::new(State::new(broadcast, mempool, blockchain, sender)),
         };
@@ -219,7 +219,7 @@ impl node::server::Node for RPCNode {
     }
 
     type GetBestBlocksStream =
-        Box<Stream<Item = GetBestBlocksReply, Error = tower_grpc::Status> + Send>;
+        Box<dyn Stream<Item = GetBestBlocksReply, Error = tower_grpc::Status> + Send>;
     type GetBestBlocksFuture =
         future::FutureResult<Response<Self::GetBestBlocksStream>, tower_grpc::Status>;
 
@@ -251,7 +251,7 @@ impl node::server::Node for RPCNode {
     }
 
     type GetBlockTemplateStream =
-        Box<Stream<Item = GetBlockTemplateReply, Error = tower_grpc::Status> + Send>;
+        Box<dyn Stream<Item = GetBlockTemplateReply, Error = tower_grpc::Status> + Send>;
     type GetBlockTemplateFuture =
         future::FutureResult<Response<Self::GetBlockTemplateStream>, tower_grpc::Status>;
 
@@ -286,7 +286,7 @@ impl node::server::Node for RPCNode {
                     .unwrap()
                     .get_tx()
                     .into_iter()
-                    .map(|tx| tx_to_rpc(tx))
+                    .map(tx_to_rpc)
                     .collect();
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

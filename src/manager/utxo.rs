@@ -47,7 +47,7 @@ impl UtxoManager {
         for (i, output) in tx.outputs.iter().enumerate() {
             let data = UtxoData {
                 script: output.script.clone(),
-                value: output.value.clone(),
+                value: output.value,
                 block_height,
                 coin_base,
             }
@@ -59,12 +59,6 @@ impl UtxoManager {
             self.database.set(outpoint.serialize(), data.to_vec())?;
         }
         Ok(())
-    }
-    pub fn exists(&self, utxo: &Outpoint) -> Result<bool, Error> {
-        Ok(match self.database.get(utxo.serialize())? {
-            Some(_) => true,
-            None => false,
-        })
     }
 
     pub fn get(&self, utxo: &Outpoint) -> Result<UtxoData, Error> {

@@ -89,7 +89,7 @@ pub fn execute_script(code: Vec<OP>, shash: Sha256Result) -> bool {
         }
     }
     match stack.pop() {
-        Some(n) => return n.len() == 1 && n[0] == 1,
-        _ => return false,
+        Some(n) => n.len() == 1 && n[0] == 1,
+        _ => false,
     }
 }
