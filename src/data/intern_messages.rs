@@ -37,6 +37,7 @@ pub enum ConnectionMessage {
     Connect(std::net::SocketAddr),
     NewConnection(tokio::net::TcpStream),
     Register(mpsc::Sender<ServerMessage>, String),
+    Quit,
 }
 
 /// Messages Sent From the server
@@ -77,6 +78,7 @@ impl std::fmt::Display for ConnectionMessage {
                 ConnectionMessage::Register(_, _) => "Register",
                 ConnectionMessage::NewBlock(_, _) => "NewBlock",
                 ConnectionMessage::Clean(_) => "Clean",
+                ConnectionMessage::Quit => "Quit",
             }
         )
     }

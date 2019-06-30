@@ -1,4 +1,3 @@
-use crate::bootstrap::irc_listener;
 use ensicoin_messages::message::Message;
 use futures::sync::mpsc;
 use tokio::{net::TcpListener, prelude::*};
@@ -41,9 +40,19 @@ impl futures::Future for Server {
         loop {
             match self.connection_receiver.poll() {
                 Ok(Async::Ready(None)) => (),
-                Ok(Async::Ready(Some(msg))) => self.handle_message(msg).unwrap(),
+                Ok(Async::Ready(Some(msg))) => match self.handle_message(msg) {
+                    Ok(false) => return Ok(Async::Ready(())),
+                    Err(e) => {
+                        error!("The server shutdown due to an error: {}", e);
+                        return Err(());
+                    }
+                    _ => (),
+                },
                 Ok(Async::NotReady) => return Ok(Async::NotReady),
-                Err(e) => panic!("Server encountered an error: {}", e),
+                Err(e) => {
+                    error!("Server encountered an error: {}", e);
+                    return Err(());
+                }
             }
             while !self.connection_buffer.is_empty() {
                 let (dest, msg) = self.connection_buffer.pop_front().unwrap();
@@ -93,7 +102,13 @@ impl Server {
         let message_stream = Box::new(
             receiver
                 .map_err(|_| Error::ChannelError)
-                .select(inbound_connection_stream),
+                .select(inbound_connection_stream)
+                .select(
+                    tokio_signal::ctrl_c()
+                        .flatten_stream()
+                        .map(|_| ConnectionMessage::Quit)
+                        .map_err(|_| Error::SignalError),
+                ),
         );
 
         let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
@@ -125,13 +140,7 @@ impl Server {
             },
             grpc_port,
         );
-        match irc_listener() {
-            Ok((_, addrs)) => (),
-            Err(e) => {
-                warn!("Could not connect to irc bootstraper: {:?}", e);
-            }
-        };
-        tokio::run(rpc.join(server).map(|_| ()));
+        tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
     }
 
     fn broadcast_to_connections(&mut self, message: ServerMessage) {
@@ -141,9 +150,15 @@ impl Server {
         }
     }
 
-    fn handle_message(&mut self, message: ConnectionMessage) -> Result<(), Error> {
+    // The boolean means should execution continue or not
+    fn handle_message(&mut self, message: ConnectionMessage) -> Result<bool, Error> {
         debug!("Server handling: {}", message);
         match message {
+            ConnectionMessage::Quit => {
+                // TODO: All gracefull
+                info!("Node shutdown !");
+                return Ok(false);
+            }
             ConnectionMessage::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
                     info!("Registered [{}]", &host);
@@ -246,7 +261,7 @@ impl Server {
                 }
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     fn handle_new_block(

@@ -1,8 +1,6 @@
 use ensicoin_serializer::{Serialize, Sha256Result};
 
 use std::fs;
-mod irc;
-pub use self::irc::irc_listener;
 
 pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
     let mut settings = data_dir.clone();
