@@ -51,6 +51,44 @@ pub struct Connection {
     terminator: Terminator,
 }
 
+impl Connection {
+    fn handle_server_message(&mut self, msg: ServerMessage) {
+        match msg {
+            ServerMessage::Terminate(e) => {
+                self.terminate(e);
+            }
+            ServerMessage::SendMessage(t, v) => {
+                if let Err(e) = self.buffer_message(t, v) {
+                    self.terminate(e);
+                }
+            }
+            ServerMessage::HandleMessage(t, v) => {
+                match t {
+                    ensicoin_messages::message::MessageType::Ping
+                    | ensicoin_messages::message::MessageType::Pong => {
+                        trace!("{} from [{}]", t, self.remote())
+                    }
+                    _ => info!("{} from [{}]", t, self.remote()),
+                };
+                if let Err(e) = self.handle_message(t, v) {
+                    self.terminate(e);
+                }
+            }
+            ServerMessage::Tick => {
+                if self.waiting_ping {
+                    self.terminate(Error::NoResponse);
+                } else {
+                    let (t, v) = Ping::new().raw_bytes();
+                    if let Err(e) = self.buffer_message(t, v) {
+                        self.terminate(e);
+                    }
+                    self.waiting_ping = true;
+                }
+            }
+        }
+    }
+}
+
 impl futures::Future for Connection {
     type Item = ();
     type Error = ();
@@ -147,39 +185,7 @@ impl futures::Future for Connection {
                     Ok(Async::Ready(None)) => (),
                     Ok(Async::Ready(Some(msg))) => {
                         trace!("Handling server message: {:?}", msg);
-                        match msg {
-                            ServerMessage::Terminate(e) => {
-                                self.terminate(e);
-                            }
-                            ServerMessage::SendMessage(t, v) => {
-                                if let Err(e) = self.buffer_message(t, v) {
-                                    self.terminate(e);
-                                }
-                            }
-                            ServerMessage::HandleMessage(t, v) => {
-                                match t {
-                                    ensicoin_messages::message::MessageType::Ping
-                                    | ensicoin_messages::message::MessageType::Pong => {
-                                        trace!("{} from [{}]", t, self.remote())
-                                    }
-                                    _ => info!("{} from [{}]", t, self.remote()),
-                                };
-                                if let Err(e) = self.handle_message(t, v) {
-                                    self.terminate(e);
-                                }
-                            }
-                            ServerMessage::Tick => {
-                                if self.waiting_ping {
-                                    self.terminate(Error::NoResponse);
-                                } else {
-                                    let (t, v) = Ping::new().raw_bytes();
-                                    if let Err(e) = self.buffer_message(t, v) {
-                                        self.terminate(e);
-                                    }
-                                    self.waiting_ping = true;
-                                }
-                            }
-                        }
+                        self.handle_server_message(msg);
                     }
                     Ok(Async::NotReady) => {
                         debug!("Waiting connection event");
