@@ -75,7 +75,7 @@ impl LinkedTransaction {
         if let DependencyType::Mempool = dep.dep_type {
             self.mempool_count += 1;
         };
-        if let None = self.dependencies.insert(outpoint, dep) {
+        if self.dependencies.insert(outpoint, dep).is_none() {
             self.dep_count += 1;
         };
     }
@@ -132,7 +132,7 @@ impl LinkedTransaction {
             output_sum += output.value;
         }
         let mut input_sum = 0;
-        for (_, input) in &self.dependencies {
+        for input in self.dependencies.values() {
             input_sum += input.data.value
         }
         Ok(input_sum < output_sum)

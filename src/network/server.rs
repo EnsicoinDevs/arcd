@@ -1,4 +1,3 @@
-use crate::bootstrap::irc_listener;
 use ensicoin_messages::message::Message;
 use futures::sync::mpsc;
 use tokio::{net::TcpListener, prelude::*};
@@ -20,7 +19,7 @@ const CHANNEL_CAPACITY: usize = 2_048;
 
 pub struct Server {
     broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
-    connection_receiver: Box<futures::Stream<Item = ConnectionMessage, Error = Error> + Send>,
+    connection_receiver: Box<dyn futures::Stream<Item = ConnectionMessage, Error = Error> + Send>,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
@@ -41,9 +40,19 @@ impl futures::Future for Server {
         loop {
             match self.connection_receiver.poll() {
                 Ok(Async::Ready(None)) => (),
-                Ok(Async::Ready(Some(msg))) => self.handle_message(msg).unwrap(),
+                Ok(Async::Ready(Some(msg))) => match self.handle_message(msg) {
+                    Ok(false) => return Ok(Async::Ready(())),
+                    Err(e) => {
+                        error!("The server shutdown due to an error: {}", e);
+                        return Err(());
+                    }
+                    _ => (),
+                },
                 Ok(Async::NotReady) => return Ok(Async::NotReady),
-                Err(e) => panic!("Server encountered an error: {}", e),
+                Err(e) => {
+                    error!("Server encountered an error: {}", e);
+                    return Err(());
+                }
             }
             while !self.connection_buffer.is_empty() {
                 let (dest, msg) = self.connection_buffer.pop_front().unwrap();
@@ -89,11 +98,17 @@ impl Server {
                 );
                 ConnectionMessage::NewConnection(socket)
             })
-            .map_err(|e| Error::from(e));
+            .map_err(Error::from);
         let message_stream = Box::new(
             receiver
                 .map_err(|_| Error::ChannelError)
-                .select(inbound_connection_stream),
+                .select(inbound_connection_stream)
+                .select(
+                    tokio_signal::ctrl_c()
+                        .flatten_stream()
+                        .map(|_| ConnectionMessage::Quit)
+                        .map_err(|_| Error::SignalError),
+                ),
         );
 
         let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
@@ -113,7 +128,7 @@ impl Server {
             orphan_manager: OrphanBlockManager::new(),
         };
         info!("Node created, listening on port {}", port);
-        let rpc = RPCNode::new(
+        let rpc = RPCNode::server(
             server.broadcast_channel.clone(),
             server.mempool.clone(),
             server.blockchain.clone(),
@@ -125,25 +140,25 @@ impl Server {
             },
             grpc_port,
         );
-        match irc_listener() {
-            Ok((_, addrs)) => (),
-            Err(e) => {
-                warn!("Could not connect to irc bootstraper: {:?}", e);
-            }
-        };
-        tokio::run(rpc.join(server).map(|_| ()));
+        tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
     }
 
     fn broadcast_to_connections(&mut self, message: ServerMessage) {
-        let remotes: Vec<_> = self.connections.keys().map(|r| r.clone()).collect();
+        let remotes: Vec<_> = self.connections.keys().cloned().collect();
         for remote in remotes {
             self.send(remote.clone(), message.clone());
         }
     }
 
-    fn handle_message(&mut self, message: ConnectionMessage) -> Result<(), Error> {
+    // The boolean means should execution continue or not
+    fn handle_message(&mut self, message: ConnectionMessage) -> Result<bool, Error> {
         debug!("Server handling: {}", message);
         match message {
+            ConnectionMessage::Quit => {
+                // TODO: All gracefull
+                info!("Node shutdown !");
+                return Ok(false);
+            }
             ConnectionMessage::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
                     info!("Registered [{}]", &host);
@@ -171,7 +186,7 @@ impl Server {
                 }
             }
             ConnectionMessage::Clean(host) => {
-                if let Some(_) = self.connections.remove(&host) {
+                if self.connections.remove(&host).is_some() {
                     self.collection_count -= 1;
                 };
                 trace!("Cleaned connection [{}]", host);
@@ -187,13 +202,10 @@ impl Server {
                 let (mut unknown_tx, _) = self.mempool.read()?.get_unknown_tx(txs);
                 unknown.append(&mut unknown_tx);
                 let get_data = ensicoin_messages::message::GetData { inventory: unknown };
-                if get_data.inventory.len() > 0 {
-                    match source {
-                        crate::data::intern_messages::Source::Connection(remote) => {
-                            let (t, v) = get_data.raw_bytes();
-                            self.send(remote, ServerMessage::SendMessage(t, v));
-                        }
-                        _ => (),
+                if !get_data.inventory.is_empty() {
+                    if let crate::data::intern_messages::Source::Connection(remote) = source {
+                        let (t, v) = get_data.raw_bytes();
+                        self.send(remote, ServerMessage::SendMessage(t, v));
                     }
                 };
             }
@@ -216,13 +228,10 @@ impl Server {
             ConnectionMessage::SyncBlocks(get_blocks, remote) => {
                 // Handling: Best Block
                 let inv = self.blockchain.read()?.generate_inv(&get_blocks)?;
-                if inv.inventory.len() > 0 {
-                    match remote {
-                        crate::data::intern_messages::Source::Connection(remote) => {
-                            let (t, v) = inv.raw_bytes();
-                            self.send(remote, ServerMessage::SendMessage(t, v));
-                        }
-                        _ => (),
+                if !inv.inventory.is_empty() {
+                    if let crate::data::intern_messages::Source::Connection(remote) = remote {
+                        let (t, v) = inv.raw_bytes();
+                        self.send(remote, ServerMessage::SendMessage(t, v));
                     }
                 }
             }
@@ -246,7 +255,7 @@ impl Server {
                 }
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     fn handle_new_block(
@@ -277,7 +286,7 @@ impl Server {
                     "Orphan block: {}",
                     ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                 );
-                self.orphan_manager.add_block((source, lblock.to_block()));
+                self.orphan_manager.add_block((source, lblock.into_block()));
                 return Ok(());
             }
         };
@@ -297,14 +306,11 @@ impl Server {
                     self.utxo_manager.register_block(&lblock)?;
                     self.mempool.write()?.remove_tx(&lblock);
                     let best_block = self.blockchain.read()?.best_block_hash()?;
-                    let common_hash = match self
-                        .blockchain
-                        .read()?
-                        .find_common_hash(best_block, hash.clone())?
-                    {
-                        Some(h) => h,
-                        None => return Err(Error::NotFound("merge point".to_string())),
-                    };
+                    let common_hash =
+                        match self.blockchain.read()?.find_common_hash(best_block, hash)? {
+                            Some(h) => h,
+                            None => return Err(Error::NotFound("merge point".to_string())),
+                        };
                     let new_branch = self.blockchain.read()?.chain_until(&hash, &common_hash)?;
                     let pop_contex = self.blockchain.write()?.pop_until(&common_hash)?;
                     for utxo in pop_contex.utxo_to_remove {
@@ -317,10 +323,8 @@ impl Server {
                         self.mempool.write()?.insert(ltx);
                     }
                     let block_chain = self.blockchain.read()?.chain_to_blocks(new_branch)?;
-                    let mut linked_chain: Vec<_> = block_chain
-                        .into_iter()
-                        .map(|b| LinkedBlock::new(b))
-                        .collect();
+                    let mut linked_chain: Vec<_> =
+                        block_chain.into_iter().map(LinkedBlock::new).collect();
                     linked_chain
                         .iter_mut()
                         .for_each(|mut lb| self.utxo_manager.link_block(&mut lb));
@@ -332,15 +336,16 @@ impl Server {
                         "New best block after fork: {}",
                         ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                     );
-                    if let Err(_) =
-                        self.broadcast_channel
-                            .write()?
-                            .try_broadcast(BroadcastMessage::BestBlock(
-                                self.blockchain
-                                    .read()?
-                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
-                                    .unwrap(),
-                            ))
+                    if self
+                        .broadcast_channel
+                        .write()?
+                        .try_broadcast(BroadcastMessage::BestBlock(
+                            self.blockchain
+                                .read()?
+                                .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                .unwrap(),
+                        ))
+                        .is_err()
                     {
                         error!("Could not broadcast");
                     }
@@ -351,15 +356,16 @@ impl Server {
                         ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                     );
                     self.utxo_manager.register_block(&lblock)?;
-                    if let Err(_) =
-                        self.broadcast_channel
-                            .write()?
-                            .try_broadcast(BroadcastMessage::BestBlock(
-                                self.blockchain
-                                    .read()?
-                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
-                                    .unwrap(),
-                            ))
+                    if self
+                        .broadcast_channel
+                        .write()?
+                        .try_broadcast(BroadcastMessage::BestBlock(
+                            self.blockchain
+                                .read()?
+                                .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                .unwrap(),
+                        ))
+                        .is_err()
                     {
                         error!("Could not broadcast");
                     }

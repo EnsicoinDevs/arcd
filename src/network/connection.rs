@@ -40,8 +40,8 @@ pub struct Connection {
     state: State,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     server_sender: mpsc::Sender<ServerMessage>,
-    message_stream: Box<futures::Stream<Item = ServerMessage, Error = Error> + Send>,
-    message_sink: Box<Sink<SinkItem = Bytes, SinkError = Error> + Send>,
+    message_stream: Box<dyn futures::Stream<Item = ServerMessage, Error = Error> + Send>,
+    message_sink: Box<dyn Sink<SinkItem = Bytes, SinkError = Error> + Send>,
     message_buffer: std::collections::VecDeque<(MessageType, Bytes)>,
     server_buffer: std::collections::VecDeque<ConnectionMessage>,
     version: u32,
@@ -49,6 +49,44 @@ pub struct Connection {
     waiting_ping: bool,
     termination: bool,
     terminator: Terminator,
+}
+
+impl Connection {
+    fn handle_server_message(&mut self, msg: ServerMessage) {
+        match msg {
+            ServerMessage::Terminate(e) => {
+                self.terminate(e);
+            }
+            ServerMessage::SendMessage(t, v) => {
+                if let Err(e) = self.buffer_message(t, v) {
+                    self.terminate(e);
+                }
+            }
+            ServerMessage::HandleMessage(t, v) => {
+                match t {
+                    ensicoin_messages::message::MessageType::Ping
+                    | ensicoin_messages::message::MessageType::Pong => {
+                        trace!("{} from [{}]", t, self.remote())
+                    }
+                    _ => info!("{} from [{}]", t, self.remote()),
+                };
+                if let Err(e) = self.handle_message(t, v) {
+                    self.terminate(e);
+                }
+            }
+            ServerMessage::Tick => {
+                if self.waiting_ping {
+                    self.terminate(Error::NoResponse);
+                } else {
+                    let (t, v) = Ping::new().raw_bytes();
+                    if let Err(e) = self.buffer_message(t, v) {
+                        self.terminate(e);
+                    }
+                    self.waiting_ping = true;
+                }
+            }
+        }
+    }
 }
 
 impl futures::Future for Connection {
@@ -147,39 +185,7 @@ impl futures::Future for Connection {
                     Ok(Async::Ready(None)) => (),
                     Ok(Async::Ready(Some(msg))) => {
                         trace!("Handling server message: {:?}", msg);
-                        match msg {
-                            ServerMessage::Terminate(e) => {
-                                self.terminate(e);
-                            }
-                            ServerMessage::SendMessage(t, v) => {
-                                if let Err(e) = self.buffer_message(t, v) {
-                                    self.terminate(e);
-                                }
-                            }
-                            ServerMessage::HandleMessage(t, v) => {
-                                match t {
-                                    ensicoin_messages::message::MessageType::Ping
-                                    | ensicoin_messages::message::MessageType::Pong => {
-                                        trace!("{} from [{}]", t, self.remote())
-                                    }
-                                    _ => info!("{} from [{}]", t, self.remote()),
-                                };
-                                if let Err(e) = self.handle_message(t, v) {
-                                    self.terminate(e);
-                                }
-                            }
-                            ServerMessage::Tick => {
-                                if self.waiting_ping {
-                                    self.terminate(Error::NoResponse);
-                                } else {
-                                    let (t, v) = Ping::new().raw_bytes();
-                                    if let Err(e) = self.buffer_message(t, v) {
-                                        self.terminate(e);
-                                    }
-                                    self.waiting_ping = true;
-                                }
-                            }
-                        }
+                        self.handle_server_message(msg);
                     }
                     Ok(Async::NotReady) => {
                         debug!("Waiting connection event");
@@ -192,7 +198,7 @@ impl futures::Future for Connection {
                 }
             }
         } else {
-            return self.terminator.poll();
+            self.terminator.poll()
         }
     }
 }
@@ -204,16 +210,15 @@ impl futures::Future for Terminator {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self
             .sender
-            .start_send(ConnectionMessage::Clean(String::from(self.remote.clone())))
+            .start_send(ConnectionMessage::Clean(self.remote.clone()))
         {
             Ok(AsyncSink::NotReady(_)) => return Ok(Async::NotReady),
             Ok(AsyncSink::Ready) => self.staged = true,
             Err(e) => panic!("Can't terminate: {}", e),
         };
-        return self
-            .sender
+        self.sender
             .poll_complete()
-            .map_err(|e| panic!("Can't terminate: {}", e));
+            .map_err(|e| panic!("Can't terminate: {}", e))
     }
 }
 
@@ -241,7 +246,7 @@ impl Terminator {
 
 impl Connection {
     pub fn source(&self) -> intern_messages::Source {
-        intern_messages::Source::Connection(String::from(self.remote.clone()))
+        intern_messages::Source::Connection(self.remote.clone())
     }
     pub fn new(stream: TcpStream, sender: ConnectionSender) -> Connection {
         let (sender_to_connection, reciever) = mpsc::channel(CHANNEL_CAPACITY);
@@ -251,7 +256,7 @@ impl Connection {
 
         let timer = tokio_timer::Interval::new_interval(std::time::Duration::from_secs(42))
             .map(|_| ServerMessage::Tick)
-            .map_err(|e| Error::TimerError(e));
+            .map_err(Error::TimerError);
 
         let message_stream = reciever
             .map_err(|_| Error::ChannelError)

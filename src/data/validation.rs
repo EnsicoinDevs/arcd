@@ -11,7 +11,7 @@ impl SanityCheck for Transaction {
                 return false;
             }
         }
-        self.inputs.len() > 0 && self.outputs.len() > 0
+        !self.inputs.is_empty() && !self.outputs.is_empty()
     }
 }
 
@@ -24,6 +24,6 @@ impl SanityCheck for Block {
         }
         let bytes_num = num_bigint::BigUint::from_bytes_be(&self.header.target);
         let hash_num = num_bigint::BigUint::from_bytes_be(&self.double_hash().to_vec());
-        self.txs.len() > 0 && hash_num < bytes_num
+        !self.txs.is_empty() && hash_num < bytes_num
     }
 }

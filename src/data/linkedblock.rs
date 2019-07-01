@@ -29,7 +29,7 @@ impl LinkedBlock {
             .iter()
             .map(|tx| tx.transaction.double_hash())
             .collect();
-        if resources.len() == 0 {
+        if resources.is_empty() {
             return Sha256Result::from([0; 32]);
         };
 
@@ -64,10 +64,7 @@ impl LinkedBlock {
         let header = block.header;
         LinkedBlock {
             header,
-            txs: txs
-                .into_iter()
-                .map(|tx| LinkedTransaction::new(tx))
-                .collect(),
+            txs: txs.into_iter().map(LinkedTransaction::new).collect(),
         }
     }
 
@@ -84,11 +81,11 @@ impl LinkedBlock {
             - num_bigint::BigUint::from_bytes_be(&self.header.target)
     }
 
-    pub fn to_block(self) -> Block {
+    pub fn into_block(self) -> Block {
         let header = self.header;
         let txs = self.txs;
         Block {
-            header: header,
+            header,
             txs: txs.into_iter().map(|txs| txs.transaction).collect(),
         }
     }
@@ -117,7 +114,7 @@ impl LinkedBlock {
             );
             return false;
         }
-        if self.txs[0].transaction.flags.len() == 0 {
+        if self.txs[0].transaction.flags.is_empty() {
             warn!("Coinbase has no flags");
             return false;
         };
@@ -144,6 +141,6 @@ impl LinkedBlock {
                 }
             }
         }
-        return true;
+        true
     }
 }

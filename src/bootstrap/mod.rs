@@ -1,8 +1,6 @@
 use ensicoin_serializer::{Serialize, Sha256Result};
 
 use std::fs;
-mod irc;
-pub use self::irc::irc_listener;
 
 pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
     let mut settings = data_dir.clone();
@@ -79,7 +77,7 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
             flags: vec!["ici cest limag".to_string()],
             prev_block: Sha256Result::from([0; 32]),
             merkle_root: Sha256Result::from([0; 32]),
-            timestamp: 1558540052,
+            timestamp: 1_558_540_052,
             nonce: 42,
             height: 0,
             target: Sha256Result::from([
@@ -93,8 +91,8 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         .double_hash()
         .iter()
         .map(|b| format!("{:x}", b))
-        .fold(String::new(), |mut acc, mut v| {
-            acc.push_str(&mut v);
+        .fold(String::new(), |mut acc, v| {
+            acc.push_str(&v);
             acc
         });
     println!("Welcome to ensicoin ! Setting up the DB and storing settings");

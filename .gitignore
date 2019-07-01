@@ -1,3 +1,4 @@
 /target
+matrix_token
 **/*.rs.bk
 matrix_creds.json

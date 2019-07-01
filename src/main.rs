@@ -49,6 +49,8 @@ extern crate tower_hyper;
 
 extern crate tokio_bus;
 
+extern crate tokio_signal;
+
 use std::io;
 
 fn main() {

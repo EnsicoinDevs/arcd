@@ -62,11 +62,9 @@ impl Mempool {
                     },
                 );
                 if self.orphan.get(&orphan_hash).unwrap().is_complete() {
-                    self.pool.insert(
-                        orphan_hash.clone(),
-                        self.orphan.remove(&orphan_hash).unwrap(),
-                    );
-                    self.added_parent_to_pool(orphan_hash.clone());
+                    self.pool
+                        .insert(orphan_hash, self.orphan.remove(&orphan_hash).unwrap());
+                    self.added_parent_to_pool(orphan_hash);
                 }
             }
         }
@@ -90,11 +88,11 @@ impl Mempool {
                     );
                 }
                 None => {
-                    if let None = self.dependencies.get(&parent.hash) {
-                        self.dependencies.insert(parent.hash.clone(), Vec::new());
+                    if self.dependencies.get(&parent.hash).is_none() {
+                        self.dependencies.insert(parent.hash, Vec::new());
                     };
                     self.dependencies.get_mut(&parent.hash).unwrap().push((
-                        Sha256Result::from_slice(&linked_tx.transaction.double_hash()).clone(),
+                        *Sha256Result::from_slice(&linked_tx.transaction.double_hash()),
                         parent,
                     ));
                 }
