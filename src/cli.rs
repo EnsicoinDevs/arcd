@@ -59,6 +59,12 @@ pub fn build_cli() -> App<'static, 'static> {
                 .conflicts_with("verbose"),
         )
         .arg(
+            Arg::with_name("matrix")
+                .long("matrix")
+                .help("JSON file for matrix credentials")
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("grpc_port")
                 .long("grpc")
                 .short("g")
