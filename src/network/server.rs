@@ -1,3 +1,4 @@
+use crate::bootstrap::matrix;
 use ensicoin_messages::message::Message;
 use futures::sync::mpsc;
 use tokio::{net::TcpListener, prelude::*};
@@ -30,6 +31,7 @@ pub struct Server {
     max_connections_count: u64,
     sync_counter: u64,
     orphan_manager: OrphanBlockManager,
+    matrix_client: Option<matrix::MatrixClient>,
 }
 
 impl futures::Future for Server {
@@ -83,12 +85,12 @@ impl Server {
         port: u16,
         grpc_port: u16,
         grpc_localhost: bool,
-    ) {
+        matrix_config: Option<matrix::Config>,
+    ) -> Result<(), Box<std::error::Error>> {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
         let listener =
-            TcpListener::bind(&std::net::SocketAddr::new("0.0.0.0".parse().unwrap(), port))
-                .unwrap();
+            TcpListener::bind(&std::net::SocketAddr::new("0.0.0.0".parse().unwrap(), port))?;
         let inbound_connection_stream = listener
             .incoming()
             .map(|socket| {
@@ -113,7 +115,7 @@ impl Server {
 
         let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
 
-        let server = Server {
+        let mut server = Server {
             broadcast_channel,
             connections: std::collections::HashMap::new(),
             connection_receiver: message_stream,
@@ -126,6 +128,7 @@ impl Server {
             connection_buffer: std::collections::VecDeque::new(),
             sync_counter: 3,
             orphan_manager: OrphanBlockManager::new(),
+            matrix_client: None,
         };
         info!("Node created, listening on port {}", port);
         let rpc = RPCNode::server(
@@ -140,7 +143,41 @@ impl Server {
             },
             grpc_port,
         );
+        let mut initial_peers = Vec::new();
+        if let Some(config) = matrix_config {
+            let matrix_client = matrix::MatrixClient::new(config);
+            match matrix_client.get_room_id() {
+                Ok(Some(room_id)) => {
+                    if let Err(e) = matrix_client.set_status(&matrix::Status::Online) {
+                        warn!("Could not pass online on matrix: {}", e)
+                    } else {
+                        if let Err(e) = matrix_client.set_name(
+                            &format!("{}", crate::constants::MAGIC),
+                            crate::constants::IP,
+                            &format!("{}", port),
+                        ) {
+                            warn!("Could not set matrix displayname: {}", e)
+                        } else {
+                            match matrix_client
+                                .get_bots(&room_id, &format!("{}", crate::constants::MAGIC))
+                            {
+                                Ok(b) => initial_peers = b,
+                                Err(e) => warn!("Could not retrieve initial_peers: {}", e),
+                            }
+                        }
+                    }
+                }
+                Ok(None) => warn!("No room id in matrix response"),
+                Err(e) => warn!("Could not get matrix room id: {}", e),
+            }
+            server.matrix_client = Some(matrix_client);
+        }
+        info!(
+            "Starting server with {} peers from matrix",
+            initial_peers.len()
+        );
         tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
+        Ok(())
     }
 
     fn broadcast_to_connections(&mut self, message: ServerMessage) {
@@ -157,6 +194,9 @@ impl Server {
             ConnectionMessage::Quit => {
                 // TODO: All gracefull
                 info!("Node shutdown !");
+                if let Some(matrix_client) = self.matrix_client.take() {
+                    matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
+                }
                 return Ok(false);
             }
             ConnectionMessage::Register(sender, host) => {

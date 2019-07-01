@@ -51,6 +51,8 @@ extern crate tokio_bus;
 
 extern crate tokio_signal;
 
+extern crate reqwest;
+
 use std::io;
 
 fn main() {
@@ -74,6 +76,17 @@ fn main() {
 
     let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
     std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut matrix_config = None;
+    if let Some(matrix_creds) = matches.value_of("matrix") {
+        match std::fs::File::open(matrix_creds) {
+            Ok(f) => match serde_json::from_reader(f) {
+                Ok(c) => matrix_config = Some(c),
+                Err(e) => warn!("Invalid JSON matrix_creds: {}", e),
+            },
+            Err(e) => warn!("Could not read matrix credentials: {}", e),
+        }
+    }
 
     match matches.subcommand() {
         ("completions", Some(sub_matches)) => {
@@ -169,7 +182,16 @@ fn main() {
                 };
                 serde_json::to_writer(settings, &defaults).unwrap();
             }
-            Server::run(max_conn, &data_dir, listen_port, grpc_port, grpc_localhost);
+            if let Err(e) = Server::run(
+                max_conn,
+                &data_dir,
+                listen_port,
+                grpc_port,
+                grpc_localhost,
+                matrix_config,
+            ) {
+                error!("Server could not be launched: {}", e)
+            };
         }
         (_, _) => (),
     };
