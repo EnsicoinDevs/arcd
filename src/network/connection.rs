@@ -380,6 +380,7 @@ impl Connection {
                     self.source(),
                 ));
             }
+            // TODO: getMempool
             MessageType::GetMempool => (),
             MessageType::Transaction => {
                 self.server_buffer
@@ -399,6 +400,9 @@ impl Connection {
             MessageType::Pong => {
                 self.waiting_ping = false;
             }
+            // TODO: Implement Addr
+            MessageType::GetAddr => (),
+            MessageType::Addr => (),
         };
         Ok(())
     }
