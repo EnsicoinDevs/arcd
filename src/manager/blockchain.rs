@@ -517,7 +517,10 @@ impl Blockchain {
             } else if time_diff < TIME_BEETWEEN_BLOCKS / 4 {
                 time_diff = TIME_BEETWEEN_BLOCKS / 4
             };
-            Ok((old_target * BigUint::from(time_diff)) / BigUint::from(TIME_BEETWEEN_BLOCKS))
+            Ok(std::cmp::min(
+                (old_target * BigUint::from(time_diff)) / BigUint::from(TIME_BEETWEEN_BLOCKS),
+                (BigUint::from(1 as u64) << 256) - (1 as u64),
+            ))
         } else {
             Ok(BigUint::from_bytes_be(&ancestor.header.target))
         }
