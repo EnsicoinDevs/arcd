@@ -192,8 +192,9 @@ impl Server {
             server.matrix_client = Some(matrix_client);
         }
         info!(
-            "Starting server with {} peers from matrix",
-            initial_peers.len()
+            "Starting server with {} peers from matrix and {} from known peers",
+            initial_peers.len(),
+            server.address_manager.len()
         );
         tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
         Ok(())
@@ -208,7 +209,8 @@ impl Server {
 
     // The boolean means should execution continue or not
     fn handle_message(&mut self, message: ConnectionMessage) -> Result<bool, Error> {
-        debug!("Server handling: {}", message);
+        debug!("Server handling {}", message);
+        self.address_manager.new_message(&message.source);
         match message.content {
             ConnectionMessageContent::Quit => {
                 // TODO: All gracefull

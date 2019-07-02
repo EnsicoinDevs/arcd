@@ -1,5 +1,7 @@
+use crate::data::intern_messages::Source;
 use ensicoin_messages::message::{Addr, Address};
 use ensicoin_serializer::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub enum AddressManagerError {
@@ -34,6 +36,7 @@ impl From<sled::Error> for AddressManagerError {
 
 #[derive(Serialize, Deserialize)]
 struct Peer {
+    pub intern_name: String,
     pub addr: Address,
     pub orphan_count: u64,
     pub connection_error: u64,
@@ -69,5 +72,21 @@ impl AddressManager {
     pub fn save(&self) -> Result<(), AddressManagerError> {
         self.db.set("address", self.address.serialize().to_vec())?;
         Ok(())
+    }
+
+    pub fn new_message(&mut self, source: &Source) {
+        if let Source::Connection(conn) = source {
+            for peer in self.address.iter_mut().find(|p| p.intern_name == *conn) {
+                let start = SystemTime::now();
+                let since_the_epoch = start
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards");
+                peer.addr.timestamp = since_the_epoch.as_secs();
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.address.len()
     }
 }
