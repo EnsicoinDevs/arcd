@@ -44,6 +44,8 @@ pub enum ConnectionMessageContent {
     Connect(std::net::SocketAddr),
     NewConnection(tokio::net::TcpStream),
     Register(mpsc::Sender<ServerMessage>, String),
+    RetrieveAddr,
+    NewAddr(ensicoin_messages::message::Addr),
     Quit,
 }
 
@@ -91,6 +93,8 @@ impl std::fmt::Display for ConnectionMessageContent {
                 ConnectionMessageContent::Register(_, _) => "Register",
                 ConnectionMessageContent::NewBlock(_) => "NewBlock",
                 ConnectionMessageContent::Clean(_) => "Clean",
+                ConnectionMessageContent::RetrieveAddr => "RetrieveAddr",
+                ConnectionMessageContent::NewAddr(_) => "Clean",
                 ConnectionMessageContent::Quit => "Quit",
             }
         )

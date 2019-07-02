@@ -13,7 +13,7 @@ use crate::{
     Error,
 };
 use ensicoin_messages::{
-    message::{self, GetBlocks, GetData, Inv, Message, MessageType, Ping, Whoami, WhoamiAck},
+    message::{self, Addr, GetBlocks, GetData, Inv, Message, MessageType, Ping, Whoami, WhoamiAck},
     resource::Transaction,
 };
 
@@ -410,9 +410,13 @@ impl Connection {
             MessageType::Pong => {
                 self.waiting_ping = false;
             }
-            // TODO: Implement Addr
-            MessageType::GetAddr => (),
-            MessageType::Addr => (),
+            MessageType::GetAddr => {
+                self.server_buffer
+                    .push_back(self.create_message(ConnectionMessageContent::RetrieveAddr));
+            }
+            MessageType::Addr => self.server_buffer.push_back(self.create_message(
+                ConnectionMessageContent::NewAddr(Addr::deserialize(&mut de)?),
+            )),
         };
         Ok(())
     }

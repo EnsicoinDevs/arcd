@@ -221,6 +221,13 @@ impl Server {
                 }
                 return Ok(false);
             }
+            ConnectionMessageContent::RetrieveAddr => {
+                if let Source::Connection(conn) = message.source {
+                    let (t, v) = self.address_manager.get_addr().raw_bytes();
+                    self.send(conn, ServerMessage::SendMessage(t, v));
+                }
+            }
+            ConnectionMessageContent::NewAddr(_) => (), //TODO: handle new_addr
             ConnectionMessageContent::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
                     info!("Registered [{}]", &host);
