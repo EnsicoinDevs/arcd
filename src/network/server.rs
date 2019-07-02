@@ -10,7 +10,7 @@ use crate::{
         linkedblock::LinkedBlock,
         linkedtx::LinkedTransaction,
     },
-    manager::{Blockchain, Mempool, NewAddition, OrphanBlockManager, UtxoManager},
+    manager::{AddressManager, Blockchain, Mempool, NewAddition, OrphanBlockManager, UtxoManager},
     network::{Connection, RPCNode},
     Error,
 };
@@ -20,17 +20,25 @@ const CHANNEL_CAPACITY: usize = 2_048;
 
 pub struct Server {
     broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
+
     connection_receiver: Box<dyn futures::Stream<Item = ConnectionMessage, Error = Error> + Send>,
     connection_sender: mpsc::Sender<ConnectionMessage>,
+
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
+
     utxo_manager: UtxoManager,
     blockchain: Arc<RwLock<Blockchain>>,
     mempool: Arc<RwLock<Mempool>>,
+
+    address_manager: AddressManager,
     collection_count: u64,
     max_connections_count: u64,
+
     sync_counter: u64,
+
     orphan_manager: OrphanBlockManager,
+
     matrix_client: Option<matrix::MatrixClient>,
 }
 
@@ -86,7 +94,7 @@ impl Server {
         grpc_port: u16,
         grpc_localhost: bool,
         matrix_config: Option<matrix::Config>,
-    ) -> Result<(), Box<std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
         let listener =
@@ -115,6 +123,8 @@ impl Server {
 
         let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
 
+        let address_manager = AddressManager::new(data_dir)?;
+
         let mut server = Server {
             broadcast_channel,
             connections: std::collections::HashMap::new(),
@@ -129,6 +139,7 @@ impl Server {
             sync_counter: 3,
             orphan_manager: OrphanBlockManager::new(),
             matrix_client: None,
+            address_manager,
         };
         info!("Node created, listening on port {}", port);
         let rpc = RPCNode::server(
@@ -196,6 +207,9 @@ impl Server {
                 info!("Node shutdown !");
                 if let Some(matrix_client) = self.matrix_client.take() {
                     matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
+                    if let Err(e) = self.address_manager.save() {
+                        warn!("Could not save addresses: {}", e);
+                    };
                 }
                 return Ok(false);
             }

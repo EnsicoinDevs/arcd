@@ -27,6 +27,10 @@ pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
     stats_dir.push(data_dir.clone());
     stats_dir.push("stats");
 
+    let mut addr_dir = std::path::PathBuf::new();
+    addr_dir.push(data_dir.clone());
+    addr_dir.push("adress_manager");
+
     let mut work_dir = std::path::PathBuf::new();
     work_dir.push(data_dir);
     work_dir.push("work");
@@ -38,6 +42,7 @@ pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
         .and(std::fs::remove_dir_all(blockchain_dir.clone()))
         .and(std::fs::remove_file(settings.clone()))
         .and(std::fs::remove_dir_all(work_dir))
+        .and(std::fs::remove_dir_all(addr_dir))
     {
         Ok(_) => Ok(()),
         Err(e) => Err(format!("Can't clean data_dir: {}", e)),
@@ -56,6 +61,13 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
     let mut stats_dir = std::path::PathBuf::new();
     stats_dir.push(data_dir);
     stats_dir.push("stats");
+
+    let mut addr_dir = std::path::PathBuf::new();
+    addr_dir.push(data_dir.clone());
+    addr_dir.push("adress_manager");
+    let addr = sled::Db::start_default(addr_dir).unwrap();
+    addr.set("address", Vec::<u8>::new().serialize().to_vec())
+        .unwrap();
 
     let mut work_dir = std::path::PathBuf::new();
     work_dir.push(data_dir);
