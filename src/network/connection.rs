@@ -7,7 +7,7 @@ use bytes::{Bytes, BytesMut};
 
 use crate::{
     data::{
-        intern_messages::{self, ConnectionMessage, ServerMessage},
+        intern_messages::{self, ConnectionMessage, ConnectionMessageContent, ServerMessage},
         MessageCodec,
     },
     Error,
@@ -208,10 +208,10 @@ impl futures::Future for Terminator {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self
-            .sender
-            .start_send(ConnectionMessage::Clean(self.remote.clone()))
-        {
+        match self.sender.start_send(ConnectionMessage {
+            content: ConnectionMessageContent::Clean(self.remote.clone()),
+            source: intern_messages::Source::Connection(self.remote.clone()),
+        }) {
             Ok(AsyncSink::NotReady(_)) => return Ok(Async::NotReady),
             Ok(AsyncSink::Ready) => self.staged = true,
             Err(e) => panic!("Can't terminate: {}", e),
@@ -245,6 +245,16 @@ impl Terminator {
 }
 
 impl Connection {
+    fn create_message(
+        &self,
+        content: intern_messages::ConnectionMessageContent,
+    ) -> intern_messages::ConnectionMessage {
+        intern_messages::ConnectionMessage {
+            source: self.source(),
+            content,
+        }
+    }
+
     pub fn source(&self) -> intern_messages::Source {
         intern_messages::Source::Connection(self.remote.clone())
     }
@@ -337,16 +347,20 @@ impl Connection {
             }
             MessageType::WhoamiAck if self.state == State::Confirm => {
                 self.state = State::Ack;
-                self.server_buffer.push_back(ConnectionMessage::Register(
-                    self.server_sender.clone(),
-                    String::from(self.remote()),
+                self.server_buffer.push_back(self.create_message(
+                    ConnectionMessageContent::Register(
+                        self.server_sender.clone(),
+                        String::from(self.remote()),
+                    ),
                 ));
             }
             MessageType::WhoamiAck if self.state == State::Replied => {
                 self.state = State::Ack;
-                self.server_buffer.push_back(ConnectionMessage::Register(
-                    self.server_sender.clone(),
-                    String::from(self.remote()),
+                self.server_buffer.push_back(self.create_message(
+                    ConnectionMessageContent::Register(
+                        self.server_sender.clone(),
+                        String::from(self.remote()),
+                    ),
                 ));
                 let (t, v) = WhoamiAck::new().raw_bytes();
                 self.buffer_message(t, v)?;
@@ -358,36 +372,32 @@ impl Connection {
                 warn!("[{}] is not in a state accepting whoamiack", self.remote());
             }
             MessageType::Inv => {
-                self.server_buffer.push_back(ConnectionMessage::CheckInv(
-                    Inv::deserialize(&mut de)?,
-                    intern_messages::Source::Connection(self.remote().to_string()),
+                self.server_buffer.push_back(self.create_message(
+                    ConnectionMessageContent::CheckInv(Inv::deserialize(&mut de)?),
                 ));
             }
             MessageType::GetData => {
-                self.server_buffer.push_back(ConnectionMessage::Retrieve(
-                    GetData::deserialize(&mut de)?,
-                    intern_messages::Source::Connection(self.remote().to_string()),
+                self.server_buffer.push_back(self.create_message(
+                    ConnectionMessageContent::Retrieve(GetData::deserialize(&mut de)?),
                 ));
             }
             MessageType::NotFound => (),
-            MessageType::Block => self.server_buffer.push_back(ConnectionMessage::NewBlock(
-                ensicoin_messages::resource::Block::deserialize(&mut de)?,
-                intern_messages::Source::Connection(self.remote().to_string()),
+            MessageType::Block => self.server_buffer.push_back(self.create_message(
+                ConnectionMessageContent::NewBlock(
+                    ensicoin_messages::resource::Block::deserialize(&mut de)?,
+                ),
             )),
             MessageType::GetBlocks => {
-                self.server_buffer.push_back(ConnectionMessage::SyncBlocks(
-                    GetBlocks::deserialize(&mut de)?,
-                    self.source(),
+                self.server_buffer.push_back(self.create_message(
+                    ConnectionMessageContent::SyncBlocks(GetBlocks::deserialize(&mut de)?),
                 ));
             }
             // TODO: getMempool
             MessageType::GetMempool => (),
             MessageType::Transaction => {
-                self.server_buffer
-                    .push_back(ConnectionMessage::NewTransaction(
-                        Transaction::deserialize(&mut de)?,
-                        intern_messages::Source::Connection(self.remote().to_string()),
-                    ));
+                self.server_buffer.push_back(self.create_message(
+                    ConnectionMessageContent::NewTransaction(Transaction::deserialize(&mut de)?),
+                ));
             }
 
             MessageType::Unknown(_) => {

@@ -13,7 +13,9 @@ use node::{
 
 use crate::{
     constants::{IMPLEMENTATION, VERSION},
-    data::intern_messages::{self, BroadcastMessage, ConnectionMessage},
+    data::intern_messages::{
+        BroadcastMessage, ConnectionMessage, ConnectionMessageContent, Source,
+    },
     manager::{Blockchain, Mempool},
 };
 use ensicoin_serializer::{hash_to_string, Deserialize, Deserializer, Serialize, Sha256Result};
@@ -174,10 +176,10 @@ impl node::server::Node for RPCNode {
         tokio::spawn(
             sender
                 .clone()
-                .send(ConnectionMessage::NewTransaction(
-                    tx,
-                    intern_messages::Source::RPC,
-                ))
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::NewTransaction(tx),
+                    source: Source::RPC,
+                })
                 .map_err(|e| warn!("[grpc] can't contact server: {}", e))
                 .map(|_| ()),
         );
@@ -208,10 +210,10 @@ impl node::server::Node for RPCNode {
         tokio::spawn(
             sender
                 .clone()
-                .send(ConnectionMessage::NewBlock(
-                    block,
-                    intern_messages::Source::RPC,
-                ))
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::NewBlock(block),
+                    source: Source::RPC,
+                })
                 .map_err(|e| warn!("[grpc] can't contact server: {}", e))
                 .map(|_| ()),
         );
@@ -357,7 +359,10 @@ impl node::server::Node for RPCNode {
         tokio::spawn(
             sender
                 .clone()
-                .send(ConnectionMessage::Connect(address))
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::Connect(address),
+                    source: Source::RPC,
+                })
                 .map_err(|e| warn!("[grpc] can't contact server: {}", e))
                 .map(|_| ()),
         );
@@ -402,10 +407,13 @@ impl node::server::Node for RPCNode {
         tokio::spawn(
             sender
                 .clone()
-                .send(ConnectionMessage::Disconnect(
-                    crate::Error::ServerTermination,
-                    address,
-                ))
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::Disconnect(
+                        crate::Error::ServerTermination,
+                        address,
+                    ),
+                    source: Source::RPC,
+                })
                 .map_err(|e| warn!("[grpc] can't contact server: {}", e))
                 .map(|_| ()),
         );

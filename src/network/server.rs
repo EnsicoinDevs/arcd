@@ -6,7 +6,9 @@ use tokio_bus::Bus;
 
 use crate::{
     data::{
-        intern_messages::{BroadcastMessage, ConnectionMessage, ServerMessage},
+        intern_messages::{
+            BroadcastMessage, ConnectionMessage, ConnectionMessageContent, ServerMessage, Source,
+        },
         linkedblock::LinkedBlock,
         linkedtx::LinkedTransaction,
     },
@@ -106,7 +108,10 @@ impl Server {
                     "Picked up connection: {}",
                     socket.peer_addr().unwrap().to_string()
                 );
-                ConnectionMessage::NewConnection(socket)
+                ConnectionMessage {
+                    content: ConnectionMessageContent::NewConnection(socket),
+                    source: Source::Server,
+                }
             })
             .map_err(Error::from);
         let message_stream = Box::new(
@@ -116,7 +121,10 @@ impl Server {
                 .select(
                     tokio_signal::ctrl_c()
                         .flatten_stream()
-                        .map(|_| ConnectionMessage::Quit)
+                        .map(|_| ConnectionMessage {
+                            content: ConnectionMessageContent::Quit,
+                            source: Source::Server,
+                        })
                         .map_err(|_| Error::SignalError),
                 ),
         );
@@ -201,8 +209,8 @@ impl Server {
     // The boolean means should execution continue or not
     fn handle_message(&mut self, message: ConnectionMessage) -> Result<bool, Error> {
         debug!("Server handling: {}", message);
-        match message {
-            ConnectionMessage::Quit => {
+        match message.content {
+            ConnectionMessageContent::Quit => {
                 // TODO: All gracefull
                 info!("Node shutdown !");
                 if let Some(matrix_client) = self.matrix_client.take() {
@@ -213,7 +221,7 @@ impl Server {
                 }
                 return Ok(false);
             }
-            ConnectionMessage::Register(sender, host) => {
+            ConnectionMessageContent::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
                     info!("Registered [{}]", &host);
                     if self.sync_counter > 0 {
@@ -239,33 +247,34 @@ impl Server {
                     );
                 }
             }
-            ConnectionMessage::Clean(host) => {
+            ConnectionMessageContent::Clean(host) => {
                 if self.connections.remove(&host).is_some() {
                     self.collection_count -= 1;
                 };
                 trace!("Cleaned connection [{}]", host);
             }
-            ConnectionMessage::Disconnect(e, host) => {
+            ConnectionMessageContent::Disconnect(e, host) => {
                 if self.connections.contains_key(&host) {
                     self.send(host, ServerMessage::Terminate(e));
                 }
             }
-            ConnectionMessage::CheckInv(inv, source) => {
+            ConnectionMessageContent::CheckInv(inv) => {
                 let (mut unknown, txs) =
                     self.blockchain.read()?.get_unknown_blocks(inv.inventory)?;
                 let (mut unknown_tx, _) = self.mempool.read()?.get_unknown_tx(txs);
                 unknown.append(&mut unknown_tx);
                 let get_data = ensicoin_messages::message::GetData { inventory: unknown };
                 if !get_data.inventory.is_empty() {
-                    if let crate::data::intern_messages::Source::Connection(remote) = source {
+                    if let crate::data::intern_messages::Source::Connection(remote) = message.source
+                    {
                         let (t, v) = get_data.raw_bytes();
                         self.send(remote, ServerMessage::SendMessage(t, v));
                     }
                 };
             }
-            ConnectionMessage::Retrieve(get_data, source) => {
+            ConnectionMessageContent::Retrieve(get_data) => {
                 // GetData
-                if let crate::data::intern_messages::Source::Connection(remote) = source {
+                if let crate::data::intern_messages::Source::Connection(remote) = message.source {
                     let (blocks, remaining) =
                         self.blockchain.read()?.get_data(get_data.inventory)?;
                     for block in blocks {
@@ -279,29 +288,30 @@ impl Server {
                     }
                 }
             }
-            ConnectionMessage::SyncBlocks(get_blocks, remote) => {
+            ConnectionMessageContent::SyncBlocks(get_blocks) => {
                 // Handling: Best Block
                 let inv = self.blockchain.read()?.generate_inv(&get_blocks)?;
                 if !inv.inventory.is_empty() {
-                    if let crate::data::intern_messages::Source::Connection(remote) = remote {
+                    if let crate::data::intern_messages::Source::Connection(remote) = message.source
+                    {
                         let (t, v) = inv.raw_bytes();
                         self.send(remote, ServerMessage::SendMessage(t, v));
                     }
                 }
             }
-            ConnectionMessage::Connect(address) => {
+            ConnectionMessageContent::Connect(address) => {
                 Connection::initiate(&address, self.connection_sender.clone());
             }
-            ConnectionMessage::NewTransaction(tx, _) => {
-                // Verify tx in mempool insert
+            ConnectionMessageContent::NewTransaction(tx) => {
+                // TODO: Verify tx in mempool insert
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);
                 self.mempool.write().unwrap().insert(ltx);
             }
-            ConnectionMessage::NewBlock(block, source) => {
-                self.handle_new_block(block, source)?;
+            ConnectionMessageContent::NewBlock(block) => {
+                self.handle_new_block(block, message.source)?;
             }
-            ConnectionMessage::NewConnection(socket) => {
+            ConnectionMessageContent::NewConnection(socket) => {
                 if self.collection_count < self.max_connections_count {
                     let new_conn = Connection::new(socket, self.connection_sender.clone());
                     trace!("new connection");

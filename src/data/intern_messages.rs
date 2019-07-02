@@ -9,6 +9,7 @@ use futures::sync::mpsc;
 #[derive(Hash, Eq, PartialEq)]
 pub enum Source {
     Connection(String),
+    Server,
     RPC,
 }
 
@@ -20,20 +21,26 @@ impl std::fmt::Display for Source {
             match self {
                 Source::Connection(r) => format!("connetion [{}]", r),
                 Source::RPC => "RPC".to_string(),
+                Source::Server => "Server".to_string(),
             }
         )
     }
 }
 
+pub struct ConnectionMessage {
+    pub content: ConnectionMessageContent,
+    pub source: Source,
+}
+
 /// Messages sent to the server by the connections for example
-pub enum ConnectionMessage {
+pub enum ConnectionMessageContent {
     Disconnect(Error, String),
     Clean(String),
-    CheckInv(Inv, Source),
-    Retrieve(GetData, Source),
-    SyncBlocks(GetBlocks, Source),
-    NewTransaction(Transaction, Source),
-    NewBlock(Block, Source),
+    CheckInv(Inv),
+    Retrieve(GetData),
+    SyncBlocks(GetBlocks),
+    NewTransaction(Transaction),
+    NewBlock(Block),
     Connect(std::net::SocketAddr),
     NewConnection(tokio::net::TcpStream),
     Register(mpsc::Sender<ServerMessage>, String),
@@ -64,21 +71,27 @@ impl Clone for ServerMessage {
 
 impl std::fmt::Display for ConnectionMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} from {}", self.content, self.source)
+    }
+}
+
+impl std::fmt::Display for ConnectionMessageContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                ConnectionMessage::Disconnect(_, _) => "Disconnect",
-                ConnectionMessage::CheckInv(_, _) => "CheckInv",
-                ConnectionMessage::Retrieve(_, _) => "Retrieve",
-                ConnectionMessage::SyncBlocks(_, _) => "SyncBlocks",
-                ConnectionMessage::NewTransaction(_, _) => "NewTx",
-                ConnectionMessage::Connect(_) => "Connect",
-                ConnectionMessage::NewConnection(_) => "NewConnection",
-                ConnectionMessage::Register(_, _) => "Register",
-                ConnectionMessage::NewBlock(_, _) => "NewBlock",
-                ConnectionMessage::Clean(_) => "Clean",
-                ConnectionMessage::Quit => "Quit",
+                ConnectionMessageContent::Disconnect(_, _) => "Disconnect",
+                ConnectionMessageContent::CheckInv(_) => "CheckInv",
+                ConnectionMessageContent::Retrieve(_) => "Retrieve",
+                ConnectionMessageContent::SyncBlocks(_) => "SyncBlocks",
+                ConnectionMessageContent::NewTransaction(_) => "NewTx",
+                ConnectionMessageContent::Connect(_) => "Connect",
+                ConnectionMessageContent::NewConnection(_) => "NewConnection",
+                ConnectionMessageContent::Register(_, _) => "Register",
+                ConnectionMessageContent::NewBlock(_) => "NewBlock",
+                ConnectionMessageContent::Clean(_) => "Clean",
+                ConnectionMessageContent::Quit => "Quit",
             }
         )
     }
