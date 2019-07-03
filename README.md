@@ -1,6 +1,6 @@
 # another-rust-coin daeamon
-[![](https://tokei.rs/b1/github/EnsicoinDevs/another-rust-coin)](https://github.com/EnsicoinDevs/another-rust-coin)
-[![Build Status](https://travis-ci.com/EnsicoinDevs/another-rust-coin.svg?branch=master)](https://travis-ci.com/EnsicoinDevs/another-rust-coin)
+[![](https://tokei.rs/b1/github/EnsicoinDevs/arcd)](https://github.com/EnsicoinDevs/arcd)
+[![Build Status](https://travis-ci.com/EnsicoinDevs/arcd.svg?branch=master)](https://travis-ci.com/EnsicoinDevs/arcd)
 
 Implementation in Rust of the ensicoin
 
