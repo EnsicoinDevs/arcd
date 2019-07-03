@@ -4,11 +4,12 @@ use ensicoin_messages::{
     message::{GetBlocks, GetData, Inv, MessageType},
     resource::{Block, Transaction},
 };
+use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
 use futures::sync::mpsc;
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub enum Source {
-    Connection(String),
+    Connection(RemoteIdentity),
     Server,
     RPC,
 }
@@ -19,11 +20,45 @@ impl std::fmt::Display for Source {
             f,
             "{}",
             match self {
-                Source::Connection(r) => format!("connetion [{}]", r),
+                Source::Connection(r) => format!("connetion [{}]", r.tcp_address),
                 Source::RPC => "RPC".to_string(),
                 Source::Server => "Server".to_string(),
             }
         )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
+pub struct RemoteIdentity {
+    pub tcp_address: String,
+    pub peer: Peer,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default, Hash, Copy)]
+pub struct Peer {
+    pub ip: [u8; 16],
+    pub port: u16,
+}
+
+impl Deserialize for Peer {
+    fn deserialize(de: &mut Deserializer) -> ensicoin_serializer::Result<Self> {
+        let ip_bytes = de.extract_bytes(16)?;
+        let mut ip = [0; 16];
+        for (i, b) in ip_bytes.iter().enumerate() {
+            ip[i] = *b;
+        }
+        let port = u16::deserialize(de)?;
+
+        Ok(Peer { ip, port })
+    }
+}
+
+impl Serialize for Peer {
+    fn serialize(&self) -> Bytes {
+        let mut buf = Bytes::new();
+        buf.extend_from_slice(&self.ip);
+        buf.extend_from_slice(&self.port.serialize());
+        buf
     }
 }
 
@@ -35,7 +70,7 @@ pub struct ConnectionMessage {
 /// Messages sent to the server by the connections for example
 pub enum ConnectionMessageContent {
     Disconnect(Error, String),
-    Clean(String),
+    Clean(RemoteIdentity),
     CheckInv(Inv),
     Retrieve(GetData),
     SyncBlocks(GetBlocks),
@@ -43,7 +78,7 @@ pub enum ConnectionMessageContent {
     NewBlock(Block),
     Connect(std::net::SocketAddr),
     NewConnection(tokio::net::TcpStream),
-    Register(mpsc::Sender<ServerMessage>, String),
+    Register(mpsc::Sender<ServerMessage>, RemoteIdentity),
     RetrieveAddr,
     NewAddr(ensicoin_messages::message::Addr),
     Quit,

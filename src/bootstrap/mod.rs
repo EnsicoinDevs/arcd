@@ -62,13 +62,6 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
     stats_dir.push(data_dir);
     stats_dir.push("stats");
 
-    let mut addr_dir = std::path::PathBuf::new();
-    addr_dir.push(data_dir.clone());
-    addr_dir.push("adress_manager");
-    let addr = sled::Db::start_default(addr_dir).unwrap();
-    addr.set("address", Vec::<u8>::new().serialize().to_vec())
-        .unwrap();
-
     let mut work_dir = std::path::PathBuf::new();
     work_dir.push(data_dir);
     work_dir.push("work");

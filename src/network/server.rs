@@ -68,6 +68,9 @@ impl futures::Future for Server {
                     return Err(());
                 }
             }
+            if self.collection_count == 0 {
+                self.find_new_peer();
+            };
             while !self.connection_buffer.is_empty() {
                 let (dest, msg) = self.connection_buffer.pop_front().unwrap();
                 match self.connections.get_mut(&dest).unwrap().start_send(msg) {
@@ -199,6 +202,7 @@ impl Server {
             initial_peers.len(),
             server.address_manager.len()
         );
+        server.address_manager.set_bots(initial_peers);
         tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
         Ok(())
     }
@@ -221,10 +225,6 @@ impl Server {
                     info!("Offline in matrix");
                     matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
                 }
-                info!("Saving addresses");
-                if let Err(e) = self.address_manager.save() {
-                    warn!("Could not save addresses: {}", e);
-                };
                 info!("Shuting down RPC server");
                 if self
                     .broadcast_channel
@@ -250,13 +250,13 @@ impl Server {
             ConnectionMessageContent::RetrieveAddr => {
                 if let Source::Connection(conn) = message.source {
                     let (t, v) = self.address_manager.get_addr().raw_bytes();
-                    self.send(conn, ServerMessage::SendMessage(t, v));
+                    self.send(conn.tcp_address, ServerMessage::SendMessage(t, v));
                 }
             }
             ConnectionMessageContent::NewAddr(_) => (), //TODO: handle new_addr
             ConnectionMessageContent::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
-                    info!("Registered [{}]", &host);
+                    info!("Registered [{}]", &host.tcp_address);
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
                         let getblocks = self.blockchain.read()?.generate_get_blocks()?;
@@ -265,13 +265,14 @@ impl Server {
                         let getmempool = ensicoin_messages::message::GetMempool {};
                         let (t, v) = getmempool.raw_bytes();
                         let msg_get_mempool = ServerMessage::SendMessage(t, v);
-                        self.send(host.clone(), msg);
-                        self.send(host.clone(), msg_get_mempool);
+                        self.send(host.tcp_address.clone(), msg);
+                        self.send(host.tcp_address.clone(), msg_get_mempool);
                     };
-                    self.connections.insert(host, sender);
+                    self.connections.insert(host.tcp_address, sender);
+                    self.address_manager.register_addr(host.peer);
                     self.collection_count += 1;
                 } else {
-                    warn!("Too many connections to accept [{}]", &host);
+                    warn!("Too many connections to accept [{}]", &host.tcp_address);
                     tokio::spawn(
                         sender
                             .send(ServerMessage::Terminate(Error::ServerTermination))
@@ -281,10 +282,10 @@ impl Server {
                 }
             }
             ConnectionMessageContent::Clean(host) => {
-                if self.connections.remove(&host).is_some() {
+                if self.connections.remove(&host.tcp_address).is_some() {
                     self.collection_count -= 1;
                 };
-                trace!("Cleaned connection [{}]", host);
+                trace!("Cleaned connection [{}]", host.tcp_address);
             }
             ConnectionMessageContent::Disconnect(e, host) => {
                 if self.connections.contains_key(&host) {
@@ -301,7 +302,7 @@ impl Server {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
                         let (t, v) = get_data.raw_bytes();
-                        self.send(remote, ServerMessage::SendMessage(t, v));
+                        self.send(remote.tcp_address, ServerMessage::SendMessage(t, v));
                     }
                 };
             }
@@ -312,12 +313,12 @@ impl Server {
                         self.blockchain.read()?.get_data(get_data.inventory)?;
                     for block in blocks {
                         let (t, v) = block.raw_bytes();
-                        self.send(remote.clone(), ServerMessage::SendMessage(t, v));
+                        self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
                     }
                     let (txs, _) = self.mempool.read()?.get_data(remaining);
                     for tx in txs {
                         let (t, v) = tx.raw_bytes();
-                        self.send(remote.clone(), ServerMessage::SendMessage(t, v));
+                        self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
                     }
                 }
             }
@@ -328,7 +329,7 @@ impl Server {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
                         let (t, v) = inv.raw_bytes();
-                        self.send(remote, ServerMessage::SendMessage(t, v));
+                        self.send(remote.tcp_address, ServerMessage::SendMessage(t, v));
                     }
                 }
             }
@@ -355,6 +356,9 @@ impl Server {
         }
         Ok(true)
     }
+
+    // TODO: Be a good peer finder
+    fn find_new_peer(&mut self) {}
 
     fn handle_new_block(
         &mut self,

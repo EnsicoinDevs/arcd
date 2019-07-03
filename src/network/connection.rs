@@ -49,6 +49,7 @@ pub struct Connection {
     remote: String,
     waiting_ping: bool,
     origin_port: u16,
+    identity: crate::data::intern_messages::RemoteIdentity,
 }
 
 impl Connection {
@@ -220,7 +221,7 @@ impl Connection {
     }
 
     pub fn source(&self) -> intern_messages::Source {
-        intern_messages::Source::Connection(self.remote.clone())
+        intern_messages::Source::Connection(self.identity.clone())
     }
     pub fn new(stream: TcpStream, sender: ConnectionSender, origin_port: u16) -> Connection {
         let (sender_to_connection, reciever) = mpsc::channel(CHANNEL_CAPACITY);
@@ -240,6 +241,8 @@ impl Connection {
             }))
             .select(timer);
 
+        let mut identity = crate::data::intern_messages::RemoteIdentity::default();
+        identity.tcp_address = remote.clone();
         Connection {
             state: State::Idle,
             message_stream: Box::new(message_stream),
@@ -252,6 +255,7 @@ impl Connection {
             server_sender: sender_to_connection.clone(),
             waiting_ping: false,
             origin_port,
+            identity,
         }
     }
 
@@ -291,7 +295,7 @@ impl Connection {
             self.connection_sender
                 .clone()
                 .send(ConnectionMessage {
-                    content: ConnectionMessageContent::Clean(self.remote().to_string()),
+                    content: ConnectionMessageContent::Clean(self.identity.clone()),
                     source: self.source(),
                 })
                 .map(|_| ())
@@ -310,6 +314,8 @@ impl Connection {
                 self.buffer_message(t, v)?;
 
                 let remote_id = Whoami::deserialize(&mut de)?;
+                self.identity.peer.ip = remote_id.address.ip;
+                self.identity.peer.port = remote_id.address.port;
                 self.version = std::cmp::min(self.version, remote_id.version);
                 self.state = State::Confirm;
             }
@@ -321,7 +327,7 @@ impl Connection {
                 self.server_buffer.push_back(self.create_message(
                     ConnectionMessageContent::Register(
                         self.server_sender.clone(),
-                        String::from(self.remote()),
+                        self.identity.clone(),
                     ),
                 ));
             }
@@ -330,7 +336,7 @@ impl Connection {
                 self.server_buffer.push_back(self.create_message(
                     ConnectionMessageContent::Register(
                         self.server_sender.clone(),
-                        String::from(self.remote()),
+                        self.identity.clone(),
                     ),
                 ));
                 let (t, v) = WhoamiAck::new().raw_bytes();
