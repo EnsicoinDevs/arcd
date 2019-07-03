@@ -224,6 +224,15 @@ impl Server {
                         warn!("Could not save addresses: {}", e);
                     };
                 }
+                for conn_sender in self.connections.values_mut() {
+                    tokio::spawn(
+                        conn_sender
+                            .clone()
+                            .send(ServerMessage::Terminate(Error::ServerTermination))
+                            .map(|_| ())
+                            .map_err(|e| warn!("Failed to bring down connection: {}", e)),
+                    );
+                }
                 return Ok(false);
             }
             ConnectionMessageContent::RetrieveAddr => {
