@@ -217,13 +217,24 @@ impl Server {
         match message.content {
             ConnectionMessageContent::Quit => {
                 // TODO: All gracefull
-                info!("Node shutdown !");
                 if let Some(matrix_client) = self.matrix_client.take() {
+                    info!("Offline in matrix");
                     matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
-                    if let Err(e) = self.address_manager.save() {
-                        warn!("Could not save addresses: {}", e);
-                    };
                 }
+                info!("Saving addresses");
+                if let Err(e) = self.address_manager.save() {
+                    warn!("Could not save addresses: {}", e);
+                };
+                info!("Shuting down RPC server");
+                if self
+                    .broadcast_channel
+                    .write()?
+                    .try_broadcast(BroadcastMessage::Quit)
+                    .is_err()
+                {
+                    error!("Cannot stop RPC server")
+                }
+                info!("Disconnecting Peers");
                 for conn_sender in self.connections.values_mut() {
                     tokio::spawn(
                         conn_sender
@@ -233,6 +244,7 @@ impl Server {
                             .map_err(|e| warn!("Failed to bring down connection: {}", e)),
                     );
                 }
+                info!("Node shutdown !");
                 return Ok(false);
             }
             ConnectionMessageContent::RetrieveAddr => {

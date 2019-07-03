@@ -104,4 +104,5 @@ impl std::fmt::Display for ConnectionMessageContent {
 #[derive(Clone)]
 pub enum BroadcastMessage {
     BestBlock(ensicoin_messages::resource::Block),
+    Quit,
 }

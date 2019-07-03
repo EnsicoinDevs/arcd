@@ -233,21 +233,23 @@ impl node::server::Node for RPCNode {
         let rx = state.broadcast.write().unwrap().add_rx();
 
         let response = rx
-            .filter(|message| match message {
-                BroadcastMessage::BestBlock(_) => true,
-                //_ => false,
+            .then(|m| match m {
+                Ok(BroadcastMessage::Quit) => Ok(None),
+                Ok(a) => Ok(Some(a)),
+                Err(_) => Err(tower_grpc::Status::new(tower_grpc::Code::Internal, "")),
             })
+            .take_while(|x| future::ok(x.is_some()))
             .map(move |message| {
+                let message = message.unwrap();
                 let block = match message {
                     BroadcastMessage::BestBlock(block) => block,
-                    //_ => unreachable!(),
+                    _ => unreachable!(),
                 };
 
                 GetBestBlocksReply {
                     hash: block.header.double_hash().to_vec(),
                 }
-            })
-            .map_err(|_| tower_grpc::Status::new(tower_grpc::Code::Internal, ""));
+            });
 
         future::ok(Response::new(Box::new(response)))
     }
@@ -272,15 +274,20 @@ impl node::server::Node for RPCNode {
             .unwrap()
             .unwrap();
 
-        let response = futures::stream::once(Ok(BroadcastMessage::BestBlock(best_block)))
-            .chain(rx.filter(|message| match message {
-                BroadcastMessage::BestBlock(_) => true,
-                //_ => false,
-            }))
+        let response = futures::stream::once(Ok(Some(BroadcastMessage::BestBlock(best_block))))
+            .chain(
+                rx.then(|m| match m {
+                    Ok(BroadcastMessage::Quit) => Ok(None),
+                    Ok(a) => Ok(Some(a)),
+                    Err(_) => Err(tower_grpc::Status::new(tower_grpc::Code::Internal, "")),
+                })
+                .take_while(|x| future::ok(x.is_some())),
+            )
             .map(move |message| {
+                let message = message.unwrap();
                 let block = match message {
                     BroadcastMessage::BestBlock(block) => block,
-                    //_ => unreachable!(),
+                    _ => unreachable!(),
                 };
                 let txs = state
                     .mempool
@@ -318,8 +325,7 @@ impl node::server::Node for RPCNode {
                     block_template: Some(block_template),
                     txs,
                 }
-            })
-            .map_err(|_| tower_grpc::Status::new(tower_grpc::Code::Internal, ""));
+            });
 
         future::ok(Response::new(Box::new(response)))
     }
