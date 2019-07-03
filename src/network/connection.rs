@@ -48,20 +48,20 @@ pub struct Connection {
     version: u32,
     remote: String,
     waiting_ping: bool,
-    termination: bool,
-    terminator: Terminator,
     origin_port: u16,
 }
 
 impl Connection {
-    fn handle_server_message(&mut self, msg: ServerMessage) {
+    fn handle_server_message(&mut self, msg: ServerMessage) -> Result<(), ()> {
         match msg {
             ServerMessage::Terminate(e) => {
                 self.terminate(e);
+                return Err(());
             }
             ServerMessage::SendMessage(t, v) => {
                 if let Err(e) = self.buffer_message(t, v) {
                     self.terminate(e);
+                    return Err(());
                 }
             }
             ServerMessage::HandleMessage(t, v) => {
@@ -74,20 +74,24 @@ impl Connection {
                 };
                 if let Err(e) = self.handle_message(t, v) {
                     self.terminate(e);
+                    return Err(());
                 }
             }
             ServerMessage::Tick => {
                 if self.waiting_ping {
                     self.terminate(Error::NoResponse);
+                    return Err(());
                 } else {
                     let (t, v) = Ping::new().raw_bytes();
                     if let Err(e) = self.buffer_message(t, v) {
                         self.terminate(e);
+                        return Err(());
                     }
                     self.waiting_ping = true;
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -96,101 +100,38 @@ impl futures::Future for Connection {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if !self.termination {
-            loop {
-                trace!("Polled");
-                match self.message_sink.poll_complete() {
-                    Ok(Async::Ready(_)) => {
-                        trace!("Sent message to remote");
-                    }
-                    Ok(Async::NotReady) => {
-                        trace!("Sink has not sent");
-                        return Ok(Async::NotReady);
-                    }
-                    Err(e) => {
-                        self.terminate(e);
-                    }
+        loop {
+            trace!("Polled");
+            match self.message_sink.poll_complete() {
+                Ok(Async::Ready(_)) => {
+                    trace!("Sent message to remote");
                 }
-                debug!("Message count: {}", self.message_buffer.len());
-                while !self.message_buffer.is_empty() {
-                    let (t, v) = self.message_buffer.pop_front().unwrap();
-                    match t {
-                        ensicoin_messages::message::MessageType::Ping
-                        | ensicoin_messages::message::MessageType::Pong => {
-                            trace!("Sending {} to [{}]", t, self.remote())
-                        }
-                        _ => info!("Sending {} to [{}]", t, self.remote()),
-                    };
-                    match self.message_sink.start_send(v) {
-                        Ok(AsyncSink::Ready) => {
-                            debug!("Started sending");
-                        }
-                        Ok(AsyncSink::NotReady(msg)) => {
-                            self.message_buffer.push_front((t, msg));
-                            trace!("Sender not ready, queued");
-                            return Ok(Async::NotReady);
-                        }
-                        Err(e) => {
-                            self.terminate(e);
-                        }
-                    }
+                Ok(Async::NotReady) => {
+                    trace!("Sink has not sent");
+                    return Ok(Async::NotReady);
                 }
-                debug!("Finished sending messages");
-                match self.message_sink.poll_complete() {
-                    Ok(Async::Ready(_)) => {
-                        trace!("Sent message to remote");
-                    }
-                    Ok(Async::NotReady) => {
-                        trace!("Sink has not sent");
-                        return Ok(Async::NotReady);
-                    }
-                    Err(e) => {
-                        self.terminate(e);
-                    }
+                Err(e) => {
+                    self.terminate(e);
+                    return Err(());
                 }
-                match self.connection_sender.poll_complete() {
-                    Ok(Async::Ready(_)) => {
-                        trace!("Sent message to server");
+            }
+            debug!("Message count: {}", self.message_buffer.len());
+            while !self.message_buffer.is_empty() {
+                let (t, v) = self.message_buffer.pop_front().unwrap();
+                match t {
+                    ensicoin_messages::message::MessageType::Ping
+                    | ensicoin_messages::message::MessageType::Pong => {
+                        trace!("Sending {} to [{}]", t, self.remote())
                     }
-                    Ok(Async::NotReady) => {
-                        trace!("Can't send message, not ready");
-                        return Ok(Async::NotReady);
+                    _ => info!("Sending {} to [{}]", t, self.remote()),
+                };
+                match self.message_sink.start_send(v) {
+                    Ok(AsyncSink::Ready) => {
+                        debug!("Started sending");
                     }
-                    Err(e) => panic!("Connection can't communicate with server: {}", e),
-                }
-                while !self.server_buffer.is_empty() {
-                    match self
-                        .connection_sender
-                        .start_send(self.server_buffer.pop_front().unwrap())
-                    {
-                        Ok(AsyncSink::Ready) => (),
-                        Ok(AsyncSink::NotReady(msg)) => {
-                            self.server_buffer.push_front(msg);
-                            trace!("Server message sink not ready");
-                        }
-                        Err(e) => panic!("Connection can't communicate with server: {}", e),
-                    }
-                }
-                debug!("Finished sending server messages");
-                match self.connection_sender.poll_complete() {
-                    Ok(Async::Ready(_)) => {
-                        trace!("Sent message to server");
-                    }
-                    Ok(Async::NotReady) => {
-                        trace!("Can't send message, not ready");
-                        return Ok(Async::NotReady);
-                    }
-                    Err(e) => panic!("Connection can't communicate with server: {}", e),
-                }
-
-                match self.message_stream.poll() {
-                    Ok(Async::Ready(None)) => (),
-                    Ok(Async::Ready(Some(msg))) => {
-                        trace!("Handling server message: {:?}", msg);
-                        self.handle_server_message(msg);
-                    }
-                    Ok(Async::NotReady) => {
-                        debug!("Waiting connection event");
+                    Ok(AsyncSink::NotReady(msg)) => {
+                        self.message_buffer.push_front((t, msg));
+                        trace!("Sender not ready, queued");
                         return Ok(Async::NotReady);
                     }
                     Err(e) => {
@@ -199,50 +140,71 @@ impl futures::Future for Connection {
                     }
                 }
             }
-        } else {
-            self.terminator.poll()
+            debug!("Finished sending messages");
+            match self.message_sink.poll_complete() {
+                Ok(Async::Ready(_)) => {
+                    trace!("Sent message to remote");
+                }
+                Ok(Async::NotReady) => {
+                    trace!("Sink has not sent");
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => {
+                    self.terminate(e);
+                    return Err(());
+                }
+            }
+            match self.connection_sender.poll_complete() {
+                Ok(Async::Ready(_)) => {
+                    trace!("Sent message to server");
+                }
+                Ok(Async::NotReady) => {
+                    trace!("Can't send message, not ready");
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => panic!("Connection can't communicate with server: {}", e),
+            }
+            while !self.server_buffer.is_empty() {
+                match self
+                    .connection_sender
+                    .start_send(self.server_buffer.pop_front().unwrap())
+                {
+                    Ok(AsyncSink::Ready) => (),
+                    Ok(AsyncSink::NotReady(msg)) => {
+                        self.server_buffer.push_front(msg);
+                        trace!("Server message sink not ready");
+                    }
+                    Err(e) => panic!("Connection can't communicate with server: {}", e),
+                }
+            }
+            debug!("Finished sending server messages");
+            match self.connection_sender.poll_complete() {
+                Ok(Async::Ready(_)) => {
+                    trace!("Sent message to server");
+                }
+                Ok(Async::NotReady) => {
+                    trace!("Can't send message, not ready");
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => panic!("Connection can't communicate with server: {}", e),
+            }
+
+            match self.message_stream.poll() {
+                Ok(Async::Ready(None)) => (),
+                Ok(Async::Ready(Some(msg))) => {
+                    trace!("Handling server message: {:?}", msg);
+                    self.handle_server_message(msg)?;
+                }
+                Ok(Async::NotReady) => {
+                    debug!("Waiting connection event");
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => {
+                    self.terminate(e);
+                    return Err(());
+                }
+            }
         }
-    }
-}
-
-impl futures::Future for Terminator {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.sender.start_send(ConnectionMessage {
-            content: ConnectionMessageContent::Clean(self.remote.clone()),
-            source: intern_messages::Source::Connection(self.remote.clone()),
-        }) {
-            Ok(AsyncSink::NotReady(_)) => return Ok(Async::NotReady),
-            Ok(AsyncSink::Ready) => self.staged = true,
-            Err(e) => panic!("Can't terminate: {}", e),
-        };
-        self.sender
-            .poll_complete()
-            .map_err(|e| panic!("Can't terminate: {}", e))
-    }
-}
-
-struct Terminator {
-    sender: mpsc::Sender<ConnectionMessage>,
-    error: Option<Error>,
-    remote: String,
-    staged: bool,
-}
-
-impl Terminator {
-    fn new(sender: mpsc::Sender<ConnectionMessage>, remote: String) -> Terminator {
-        Terminator {
-            sender,
-            staged: false,
-            error: None,
-            remote,
-        }
-    }
-
-    fn set_error(&mut self, error: Error) {
-        self.error = Some(error);
     }
 }
 
@@ -289,8 +251,6 @@ impl Connection {
             connection_sender: sender.clone(),
             server_sender: sender_to_connection.clone(),
             waiting_ping: false,
-            termination: false,
-            terminator: Terminator::new(sender, remote),
             origin_port,
         }
     }
@@ -327,8 +287,16 @@ impl Connection {
 
     fn terminate(&mut self, error: Error) {
         warn!("connection [{}] terminated: {}", self.remote(), error);
-        self.termination = true;
-        self.terminator.set_error(error);
+        tokio::spawn(
+            self.connection_sender
+                .clone()
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::Clean(self.remote().to_string()),
+                    source: self.source(),
+                })
+                .map(|_| ())
+                .map_err(|e| warn!("Cannot terminate connection gracefully: {}", e)),
+        );
     }
 
     fn handle_message(&mut self, t: MessageType, v: BytesMut) -> Result<(), Error> {
