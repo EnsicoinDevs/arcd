@@ -10,6 +10,7 @@ use crate::{
         intern_messages::{self, ConnectionMessage, ConnectionMessageContent, ServerMessage},
         MessageCodec,
     },
+    network::create_self_address,
     Error,
 };
 use ensicoin_messages::{
@@ -49,6 +50,7 @@ pub struct Connection {
     waiting_ping: bool,
     termination: bool,
     terminator: Terminator,
+    origin_port: u16,
 }
 
 impl Connection {
@@ -258,7 +260,7 @@ impl Connection {
     pub fn source(&self) -> intern_messages::Source {
         intern_messages::Source::Connection(self.remote.clone())
     }
-    pub fn new(stream: TcpStream, sender: ConnectionSender) -> Connection {
+    pub fn new(stream: TcpStream, sender: ConnectionSender, origin_port: u16) -> Connection {
         let (sender_to_connection, reciever) = mpsc::channel(CHANNEL_CAPACITY);
         let remote = stream.peer_addr().unwrap().to_string();
         let (message_sink, message_stream) =
@@ -289,18 +291,19 @@ impl Connection {
             waiting_ping: false,
             termination: false,
             terminator: Terminator::new(sender, remote),
+            origin_port,
         }
     }
 
-    pub fn initiate(address: &std::net::SocketAddr, sender: ConnectionSender) {
+    pub fn initiate(address: &std::net::SocketAddr, sender: ConnectionSender, origin_port: u16) {
         tokio::spawn(
             tokio::net::TcpStream::connect(address)
                 .map_err(|_| ())
-                .and_then(|stream| {
+                .and_then(move |stream| {
                     let remote = stream.peer_addr().unwrap().to_string();
                     info!("connected to [{}]", remote);
-                    let mut conn = Connection::new(stream, sender);
-                    let (t, v) = Whoami::new().raw_bytes();
+                    let mut conn = Connection::new(stream, sender, origin_port);
+                    let (t, v) = Whoami::new(create_self_address(origin_port)).raw_bytes();
                     conn.state = State::Initiated;
                     conn.buffer_message(t, v).unwrap();
                     conn
@@ -332,7 +335,7 @@ impl Connection {
         let mut de = Deserializer::new(v);
         match t {
             MessageType::Whoami if self.state == State::Idle => {
-                let (t, v) = Whoami::new().raw_bytes();
+                let (t, v) = Whoami::new(create_self_address(self.origin_port)).raw_bytes();
                 self.buffer_message(t, v)?;
 
                 let (t, v) = WhoamiAck::new().raw_bytes();

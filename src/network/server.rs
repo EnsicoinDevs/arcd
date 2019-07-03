@@ -42,6 +42,8 @@ pub struct Server {
     orphan_manager: OrphanBlockManager,
 
     matrix_client: Option<matrix::MatrixClient>,
+
+    origin_port: u16,
 }
 
 impl futures::Future for Server {
@@ -148,6 +150,7 @@ impl Server {
             orphan_manager: OrphanBlockManager::new(),
             matrix_client: None,
             address_manager,
+            origin_port: port,
         };
         info!("Node created, listening on port {}", port);
         let rpc = RPCNode::server(
@@ -309,7 +312,7 @@ impl Server {
                 }
             }
             ConnectionMessageContent::Connect(address) => {
-                Connection::initiate(&address, self.connection_sender.clone());
+                Connection::initiate(&address, self.connection_sender.clone(), self.origin_port);
             }
             ConnectionMessageContent::NewTransaction(tx) => {
                 // TODO: Verify tx in mempool insert
@@ -322,7 +325,8 @@ impl Server {
             }
             ConnectionMessageContent::NewConnection(socket) => {
                 if self.collection_count < self.max_connections_count {
-                    let new_conn = Connection::new(socket, self.connection_sender.clone());
+                    let new_conn =
+                        Connection::new(socket, self.connection_sender.clone(), self.origin_port);
                     trace!("new connection");
                     tokio::spawn(new_conn);
                 }
