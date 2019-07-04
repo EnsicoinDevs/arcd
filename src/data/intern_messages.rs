@@ -81,6 +81,7 @@ pub enum ConnectionMessageContent {
     Register(mpsc::Sender<ServerMessage>, RemoteIdentity),
     RetrieveAddr,
     NewAddr(ensicoin_messages::message::Addr),
+    VerifiedAddr(ensicoin_messages::message::Address),
     Quit,
 }
 
@@ -129,7 +130,8 @@ impl std::fmt::Display for ConnectionMessageContent {
                 ConnectionMessageContent::NewBlock(_) => "NewBlock",
                 ConnectionMessageContent::Clean(_) => "Clean",
                 ConnectionMessageContent::RetrieveAddr => "RetrieveAddr",
-                ConnectionMessageContent::NewAddr(_) => "Clean",
+                ConnectionMessageContent::NewAddr(_) => "NewAddr",
+                ConnectionMessageContent::VerifiedAddr(_) => "VerifiedAddr",
                 ConnectionMessageContent::Quit => "Quit",
             }
         )

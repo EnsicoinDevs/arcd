@@ -253,7 +253,10 @@ impl Server {
                     self.send(conn.tcp_address, ServerMessage::SendMessage(t, v));
                 }
             }
-            ConnectionMessageContent::NewAddr(_) => (), //TODO: handle new_addr
+            ConnectionMessageContent::NewAddr(addr) => {
+                crate::network::verify_addr(addr, self.connection_sender.clone());
+            }
+            ConnectionMessageContent::VerifiedAddr(address) => (), // TODO: register addr
             ConnectionMessageContent::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
                     info!("Registered [{}]", &host.tcp_address);
