@@ -259,19 +259,46 @@ impl Connection {
         }
     }
 
-    pub fn initiate(address: &std::net::SocketAddr, sender: ConnectionSender, origin_port: u16) {
+    pub fn initiate(address: std::net::SocketAddr, sender: ConnectionSender, origin_port: u16) {
         tokio::spawn(
-            tokio::net::TcpStream::connect(address)
+            tokio::net::TcpStream::connect(&address)
+                .map(Some)
                 .map_err(|_| ())
-                .and_then(move |stream| {
-                    let remote = stream.peer_addr().unwrap().to_string();
-                    info!("connected to [{}]", remote);
-                    let mut conn = Connection::new(stream, sender, origin_port);
-                    let (t, v) = Whoami::new(create_self_address(origin_port)).raw_bytes();
-                    conn.state = State::Initiated;
-                    conn.buffer_message(t, v).unwrap();
-                    conn
-                }),
+                .select(
+                    tokio_timer::Delay::new(
+                        std::time::Instant::now() + std::time::Duration::from_secs(3),
+                    )
+                    .map(|_| None)
+                    .map_err(|_| ()),
+                )
+                .then(
+                    move |f| -> Box<dyn futures::Future<Item = (), Error = ()> + Send> {
+                        match f {
+                            Ok((Some(stream), _)) => {
+                                let remote = stream.peer_addr().unwrap().to_string();
+                                info!("connected to [{}]", remote);
+                                let mut conn = Connection::new(stream, sender, origin_port);
+                                let (t, v) =
+                                    Whoami::new(create_self_address(origin_port)).raw_bytes();
+                                conn.state = State::Initiated;
+                                conn.buffer_message(t, v).unwrap();
+                                Box::new(conn)
+                            }
+                            Err(_) | Ok((None, _)) => Box::new(
+                                sender
+                                    .clone()
+                                    .send(ConnectionMessage {
+                                        content: ConnectionMessageContent::ConnectionFailed(
+                                            address,
+                                        ),
+                                        source: crate::data::intern_messages::Source::Server,
+                                    })
+                                    .map(|_| ())
+                                    .map_err(|_| ()),
+                            ),
+                        }
+                    },
+                ),
         );
     }
 

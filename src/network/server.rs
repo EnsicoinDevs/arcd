@@ -219,8 +219,10 @@ impl Server {
         debug!("Server handling {}", message);
         self.address_manager.new_message(&message.source);
         match message.content {
+            ConnectionMessageContent::ConnectionFailed(address) => {
+                info!("Connection {} failed", address);
+            }
             ConnectionMessageContent::Quit => {
-                // TODO: All gracefull
                 if let Some(matrix_client) = self.matrix_client.take() {
                     info!("Offline in matrix");
                     matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
@@ -337,7 +339,7 @@ impl Server {
                 }
             }
             ConnectionMessageContent::Connect(address) => {
-                Connection::initiate(&address, self.connection_sender.clone(), self.origin_port);
+                Connection::initiate(address, self.connection_sender.clone(), self.origin_port);
             }
             ConnectionMessageContent::NewTransaction(tx) => {
                 // TODO: Verify tx in mempool insert

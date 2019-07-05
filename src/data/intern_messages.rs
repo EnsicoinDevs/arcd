@@ -80,6 +80,7 @@ pub enum ConnectionMessageContent {
     NewConnection(tokio::net::TcpStream),
     Register(mpsc::Sender<ServerMessage>, RemoteIdentity),
     RetrieveAddr,
+    ConnectionFailed(std::net::SocketAddr),
     NewAddr(ensicoin_messages::message::Addr),
     VerifiedAddr(ensicoin_messages::message::Address),
     Quit,
@@ -132,6 +133,7 @@ impl std::fmt::Display for ConnectionMessageContent {
                 ConnectionMessageContent::RetrieveAddr => "RetrieveAddr",
                 ConnectionMessageContent::NewAddr(_) => "NewAddr",
                 ConnectionMessageContent::VerifiedAddr(_) => "VerifiedAddr",
+                ConnectionMessageContent::ConnectionFailed(_) => "ConnectionFailed",
                 ConnectionMessageContent::Quit => "Quit",
             }
         )
