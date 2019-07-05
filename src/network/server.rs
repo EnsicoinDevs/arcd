@@ -52,6 +52,9 @@ impl futures::Future for Server {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
+            if self.collection_count < 10 {
+                self.find_new_peer()
+            };
             match self.connection_receiver.poll() {
                 Ok(Async::Ready(None)) => (),
                 Ok(Async::Ready(Some(msg))) => match self.handle_message(msg) {
