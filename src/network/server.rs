@@ -168,7 +168,7 @@ impl Server {
             },
             grpc_port,
         );
-        let mut initial_peers = Vec::new();
+        let mut initial_bots = Vec::new();
         if let Some(config) = matrix_config {
             let matrix_client = matrix::MatrixClient::new(config);
             match matrix_client.get_room_id() {
@@ -186,7 +186,7 @@ impl Server {
                             match matrix_client
                                 .get_bots(&room_id, &format!("{}", crate::constants::MAGIC))
                             {
-                                Ok(b) => initial_peers = b,
+                                Ok(b) => initial_bots = b,
                                 Err(e) => warn!("Could not retrieve initial_peers: {}", e),
                             }
                         }
@@ -199,10 +199,10 @@ impl Server {
         }
         info!(
             "Starting server with {} peers from matrix and {} from known peers",
-            initial_peers.len(),
+            initial_bots.len(),
             server.address_manager.len()
         );
-        server.address_manager.set_bots(initial_peers);
+        server.address_manager.set_bots(initial_bots);
         tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
         Ok(())
     }
@@ -221,6 +221,9 @@ impl Server {
         match message.content {
             ConnectionMessageContent::ConnectionFailed(address) => {
                 info!("Connection {} failed", address);
+                if self.collection_count < 10 {
+                    self.find_new_peer()
+                }
             }
             ConnectionMessageContent::Quit => {
                 if let Some(matrix_client) = self.matrix_client.take() {
@@ -258,7 +261,9 @@ impl Server {
             ConnectionMessageContent::NewAddr(addr) => {
                 crate::network::verify_addr(addr, self.connection_sender.clone());
             }
-            ConnectionMessageContent::VerifiedAddr(address) => (), // TODO: register addr
+            ConnectionMessageContent::VerifiedAddr(address) => {
+                self.address_manager.add_addr(address)
+            }
             ConnectionMessageContent::Register(sender, host) => {
                 if self.collection_count < self.max_connections_count {
                     info!("Registered [{}]", &host.tcp_address);
@@ -290,6 +295,9 @@ impl Server {
                 if self.connections.remove(&host.tcp_address).is_some() {
                     self.collection_count -= 1;
                 };
+                if self.collection_count < 10 {
+                    self.find_new_peer()
+                }
                 trace!("Cleaned connection [{}]", host.tcp_address);
             }
             ConnectionMessageContent::Disconnect(e, host) => {

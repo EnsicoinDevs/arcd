@@ -157,6 +157,27 @@ impl AddressManager {
         }
     }
 
+    pub fn add_addr(&mut self, addr: Address) {
+        let peer = Peer {
+            ip: addr.ip,
+            port: addr.port,
+        };
+        match &self.get_peer(peer) {
+            Ok(Some(data)) if data.timestamp < addr.timestamp => (),
+            Err(_) => (),
+            _ => {
+                if let Err(e) = self.set_peer(
+                    peer,
+                    PeerData {
+                        timestamp: addr.timestamp,
+                    },
+                ) {
+                    warn!("Error in addr db: {}", e)
+                }
+            }
+        }
+    }
+
     pub fn register_addr(&mut self, peer: Peer) {
         let now = SystemTime::now();
         let since_epoch = now
