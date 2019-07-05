@@ -149,7 +149,7 @@ impl AddressManager {
                 return;
             }
         };
-        for mut data in data {
+        if let Some(mut data) = data {
             data.timestamp = since_epoch.as_secs();
             if let Err(e) = self.set_peer(peer, data) {
                 warn!("Error setting in addr db: {}", e)
