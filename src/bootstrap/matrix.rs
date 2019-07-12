@@ -68,7 +68,7 @@ impl MatrixClient {
         }
     }
 
-    pub fn get_room_id(&self) -> Result<Option<String>, Box<std::error::Error>> {
+    pub fn get_room_id(&self) -> Result<Option<String>, Box<dyn std::error::Error>> {
         let join_req: HashMap<String, String> = self
             .client
             .post(&format!(
@@ -83,7 +83,7 @@ impl MatrixClient {
         &self,
         room_id: &str,
         magic: &str,
-    ) -> Result<Vec<String>, Box<std::error::Error>> {
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let members: MembersReply = self
             .client
             .get(&format!(
@@ -110,7 +110,7 @@ impl MatrixClient {
         magic: &str,
         ip: &str,
         port: &str,
-    ) -> Result<(), Box<std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let name = format!("{}_{}:{}", magic, ip, port);
         let mut payload = HashMap::new();
         payload.insert("displayname", name);
@@ -123,7 +123,7 @@ impl MatrixClient {
             .send()?;
         Ok(())
     }
-    pub fn set_status(&self, status: &Status) -> Result<(), Box<std::error::Error>> {
+    pub fn set_status(&self, status: &Status) -> Result<(), Box<dyn std::error::Error>> {
         let mut payload = HashMap::new();
         payload.insert("presence", status.to_string());
         self.client
