@@ -81,16 +81,16 @@ impl FromStr for LogLevel {
 #[structopt(name = "arcd", about = "An ensicoin node in rust")]
 struct Config {
     #[structopt(short, long, default_value = "info")]
-    // Sets the log level (can be "trace","debug", "info", "error")
+    /// Sets the log level (can be "trace","debug", "info", "error")
     pub log: LogLevel,
     #[structopt(long)]
-    // Cleans all data from previous executions
+    /// Cleans all data from previous executions
     pub clean: bool,
     #[structopt(short, long)]
-    // Saves the parameters as defaults for the next execution
+    /// Saves the parameters as defaults for the next execution
     pub save: bool,
     #[structopt(long)]
-    // Uses a saved config
+    /// Uses a saved config
     pub use_config: bool,
     #[structopt(flatten)]
     pub server_config: ServerConfig,
@@ -98,23 +98,23 @@ struct Config {
 
 #[derive(StructOpt, serde::Serialize, serde::Deserialize)]
 pub struct ServerConfig {
-    #[structopt(short = "c", long = "connections", default_value = "")]
-    // Sets the maximum number of connections
+    #[structopt(short = "c", long = "connections", default_value = "42")]
+    /// Sets the maximum number of connections
     pub max_connections: u64,
     #[structopt(long)]
-    // Changes the default directory
+    /// Changes the default directory
     pub data_dir: Option<std::path::PathBuf>,
     #[structopt(short, long, default_value = "4224")]
-    // Port listening for connections
+    /// Port listening for connections
     pub port: u16,
     #[structopt(long)]
-    // RON credentials for matrix
+    /// RON credentials for matrix
     pub matrix_creds: Option<std::path::PathBuf>,
     #[structopt(long, short, default_value = "4225")]
-    // Port listening for gRPC requests
+    /// Port listening for gRPC requests
     pub grpc_port: u16,
     #[structopt(long)]
-    // Restrict gRPC requests to localhost
+    /// Restrict gRPC requests to localhost
     pub grpc_localhost: bool,
 }
 
@@ -141,7 +141,11 @@ fn main() {
     };
     let data_dir = config.server_config.data_dir.clone().unwrap();
 
-    std::fs::create_dir_all(&data_dir).unwrap();
+    let mut should_bootstrap = match std::fs::create_dir_all(&data_dir) {
+        Err(e) => e.kind() == std::io::ErrorKind::AlreadyExists,
+        Ok(_) => false,
+    };
+
     if let Some(s) = data_dir.to_str() {
         info!("Using {} as data directory", s);
     }
@@ -151,7 +155,15 @@ fn main() {
             eprintln!("Could not clean directory: {}", e);
             return;
         }
+        should_bootstrap = true;
     };
+    if should_bootstrap {
+        if let Err(e) = bootstrap::bootstrap(&data_dir) {
+            error!("Could not bootstrap: {}", e);
+            return;
+        }
+    }
+
     let mut settings_path = data_dir.clone();
     settings_path.push("settings.ron");
     let mut settings_file = match File::open(settings_path) {
