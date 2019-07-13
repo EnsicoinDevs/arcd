@@ -67,15 +67,12 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
     work_dir.push("work");
     let work = sled::Db::start_default(work_dir).unwrap();
 
-    let settings = match fs::File::create(settings) {
+    let _ = match fs::File::create(settings) {
         Ok(f) => f,
         Err(e) => {
             return Err(format!("Can't bootstrap at that location: {}", e));
         }
     };
-
-    let defaults: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    serde_json::to_writer(settings, &defaults).unwrap();
 
     let genesis = ensicoin_messages::resource::Block {
         header: ensicoin_messages::resource::BlockHeader {

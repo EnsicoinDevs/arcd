@@ -14,7 +14,7 @@ use crate::{
     },
     manager::{AddressManager, Blockchain, Mempool, NewAddition, OrphanBlockManager, UtxoManager},
     network::{Connection, RPCNode},
-    Error,
+    Error, ServerConfig,
 };
 use std::sync::{Arc, RwLock};
 
@@ -97,18 +97,13 @@ impl Server {
         self.connection_buffer.push_back((dest, msg));
     }
 
-    pub fn run(
-        max_conn: u64,
-        data_dir: &std::path::Path,
-        port: u16,
-        grpc_port: u16,
-        grpc_localhost: bool,
-        matrix_config: Option<matrix::Config>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
-        let listener =
-            TcpListener::bind(&std::net::SocketAddr::new("0.0.0.0".parse().unwrap(), port))?;
+        let listener = TcpListener::bind(&std::net::SocketAddr::new(
+            "0.0.0.0".parse().unwrap(),
+            config.port,
+        ))?;
         let inbound_connection_stream = listener
             .incoming()
             .map(|socket| {
@@ -139,7 +134,7 @@ impl Server {
 
         let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
 
-        let address_manager = AddressManager::new(data_dir)?;
+        let address_manager = AddressManager::new(config.data_dir.as_ref().unwrap())?;
 
         let mut server = Server {
             broadcast_channel,
@@ -147,58 +142,38 @@ impl Server {
             connection_receiver: message_stream,
             connection_sender: sender,
             collection_count: 0,
-            max_connections_count: max_conn,
-            utxo_manager: UtxoManager::new(data_dir),
-            blockchain: Arc::new(RwLock::new(Blockchain::new(data_dir))),
+            max_connections_count: config.max_connections,
+            utxo_manager: UtxoManager::new(config.data_dir.as_ref().unwrap()),
+            blockchain: Arc::new(RwLock::new(Blockchain::new(
+                &config.data_dir.as_ref().unwrap(),
+            ))),
             mempool: Arc::new(RwLock::new(Mempool::new())),
             connection_buffer: std::collections::VecDeque::new(),
             sync_counter: 3,
             orphan_manager: OrphanBlockManager::new(),
             matrix_client: None,
             address_manager,
-            origin_port: port,
+            origin_port: config.port,
         };
-        info!("Node created, listening on port {}", port);
+        info!("Node created, listening on port {}", config.port);
         let rpc = RPCNode::server(
             server.broadcast_channel.clone(),
             server.mempool.clone(),
             server.blockchain.clone(),
             server.connection_sender.clone(),
-            if grpc_localhost {
+            if config.grpc_localhost {
                 "127.0.0.1"
             } else {
                 "0.0.0.0"
             },
-            grpc_port,
+            config.grpc_port,
         );
         let mut initial_bots = Vec::new();
-        if let Some(config) = matrix_config {
-            let matrix_client = matrix::MatrixClient::new(config);
-            match matrix_client.get_room_id() {
-                Ok(Some(room_id)) => {
-                    if let Err(e) = matrix_client.set_status(&matrix::Status::Online) {
-                        warn!("Could not pass online on matrix: {}", e)
-                    } else {
-                        if let Err(e) = matrix_client.set_name(
-                            &format!("{}", crate::constants::MAGIC),
-                            crate::constants::IP,
-                            &format!("{}", port),
-                        ) {
-                            warn!("Could not set matrix displayname: {}", e)
-                        } else {
-                            match matrix_client
-                                .get_bots(&room_id, &format!("{}", crate::constants::MAGIC))
-                            {
-                                Ok(b) => initial_bots = b,
-                                Err(e) => warn!("Could not retrieve initial_peers: {}", e),
-                            }
-                        }
-                    }
-                }
-                Ok(None) => warn!("No room id in matrix response"),
-                Err(e) => warn!("Could not get matrix room id: {}", e),
+        if config.matrix_creds.is_some() {
+            match server.start_matrix(&config) {
+                Ok(b) => initial_bots = b,
+                Err(()) => (),
             }
-            server.matrix_client = Some(matrix_client);
         }
         info!(
             "Starting server with {} peers from matrix and {} from known peers",
@@ -208,6 +183,52 @@ impl Server {
         server.address_manager.set_bots(initial_bots);
         tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
         Ok(())
+    }
+
+    fn start_matrix(&mut self, config: &ServerConfig) -> Result<Vec<String>, ()> {
+        let mut initial_bots = Vec::new();
+        let matrix_creds = match std::fs::File::open(config.matrix_creds.as_ref().unwrap()) {
+            Ok(f) => f,
+            Err(e) => {
+                warn!("Could not read matrix credentials: {}", e);
+                return Err(());
+            }
+        };
+        let matrix_config: crate::bootstrap::matrix::Config =
+            match ron::de::from_reader(matrix_creds) {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!("Could not deserialize matrix credentials: {}", e);
+                    return Err(());
+                }
+            };
+        let matrix_client = matrix::MatrixClient::new(matrix_config);
+        match matrix_client.get_room_id() {
+            Ok(Some(room_id)) => {
+                if let Err(e) = matrix_client.set_status(&matrix::Status::Online) {
+                    warn!("Could not pass online on matrix: {}", e)
+                } else {
+                    if let Err(e) = matrix_client.set_name(
+                        &format!("{}", crate::constants::MAGIC),
+                        crate::constants::IP,
+                        &format!("{}", config.port),
+                    ) {
+                        warn!("Could not set matrix displayname: {}", e)
+                    } else {
+                        match matrix_client
+                            .get_bots(&room_id, &format!("{}", crate::constants::MAGIC))
+                        {
+                            Ok(b) => initial_bots = b,
+                            Err(e) => warn!("Could not retrieve initial_peers: {}", e),
+                        }
+                    }
+                }
+            }
+            Ok(None) => warn!("No room id in matrix response"),
+            Err(e) => warn!("Could not get matrix room id: {}", e),
+        }
+        self.matrix_client = Some(matrix_client);
+        Ok(initial_bots)
     }
 
     fn broadcast_to_connections(&mut self, message: ServerMessage) {

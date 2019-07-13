@@ -1,5 +1,4 @@
 mod bootstrap;
-mod cli;
 mod constants;
 mod data;
 mod error;
@@ -12,20 +11,17 @@ use network::Server;
 
 extern crate bytes;
 
+extern crate ron;
 extern crate serde;
-extern crate serde_json;
 
 extern crate futures;
 extern crate tokio;
 extern crate tokio_timer;
 
-#[macro_use]
-extern crate clap;
+extern crate structopt;
 #[macro_use]
 extern crate log;
 extern crate simplelog;
-#[macro_use]
-extern crate lazy_static;
 
 extern crate dirs;
 
@@ -53,19 +49,83 @@ extern crate tokio_signal;
 
 extern crate reqwest;
 
-use std::io;
+use std::fs::File;
+use std::io::prelude::*;
+use std::str::FromStr;
+use structopt::StructOpt;
+
+#[derive(Debug)]
+enum LogLevel {
+    Debug,
+    Error,
+    Trace,
+    Info,
+}
+
+impl FromStr for LogLevel {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let lower: &str = &s.to_ascii_lowercase();
+        match lower {
+            "debug" => Ok(Self::Debug),
+            "error" => Ok(Self::Error),
+            "trace" => Ok(Self::Trace),
+            "info" => Ok(Self::Info),
+            s => Err(format!("Unknown log level: {}", s)),
+        }
+    }
+}
+
+#[derive(StructOpt)]
+#[structopt(name = "arcd", about = "An ensicoin node in rust")]
+struct Config {
+    #[structopt(short, long, default_value = "info")]
+    // Sets the log level (can be "trace","debug", "info", "error")
+    pub log: LogLevel,
+    #[structopt(long)]
+    // Cleans all data from previous executions
+    pub clean: bool,
+    #[structopt(short, long)]
+    // Saves the parameters as defaults for the next execution
+    pub save: bool,
+    #[structopt(long)]
+    // Uses a saved config
+    pub use_config: bool,
+    #[structopt(flatten)]
+    pub server_config: ServerConfig,
+}
+
+#[derive(StructOpt, serde::Serialize, serde::Deserialize)]
+pub struct ServerConfig {
+    #[structopt(short = "c", long = "connections", default_value = "")]
+    // Sets the maximum number of connections
+    pub max_connections: u64,
+    #[structopt(long)]
+    // Changes the default directory
+    pub data_dir: Option<std::path::PathBuf>,
+    #[structopt(short, long, default_value = "4224")]
+    // Port listening for connections
+    pub port: u16,
+    #[structopt(long)]
+    // RON credentials for matrix
+    pub matrix_creds: Option<std::path::PathBuf>,
+    #[structopt(long, short, default_value = "4225")]
+    // Port listening for gRPC requests
+    pub grpc_port: u16,
+    #[structopt(long)]
+    // Restrict gRPC requests to localhost
+    pub grpc_localhost: bool,
+}
 
 fn main() {
-    let matches = cli::build_cli().get_matches();
+    let mut config = Config::from_args();
 
-    let log_level = if matches.is_present("verbose") {
-        simplelog::LevelFilter::Debug
-    } else if matches.is_present("error") {
-        simplelog::LevelFilter::Error
-    } else if matches.is_present("trace") {
-        simplelog::LevelFilter::Trace
-    } else {
-        simplelog::LevelFilter::Info
+    let log_level = match config.log {
+        LogLevel::Debug => simplelog::LevelFilter::Debug,
+        LogLevel::Info => simplelog::LevelFilter::Info,
+        LogLevel::Error => simplelog::LevelFilter::Error,
+        LogLevel::Trace => simplelog::LevelFilter::Trace,
     };
     simplelog::TermLogger::init(
         log_level,
@@ -74,125 +134,56 @@ fn main() {
     )
     .unwrap();
 
-    let data_dir = std::path::PathBuf::from(matches.value_of("datadir").unwrap());
-    std::fs::create_dir_all(&data_dir).unwrap();
+    if config.server_config.data_dir.is_none() {
+        let mut path = dirs::data_dir().unwrap();
+        path.push(r"another-rust-coin");
+        config.server_config.data_dir = Some(path);
+    };
+    let data_dir = config.server_config.data_dir.clone().unwrap();
 
-    let mut matrix_config = None;
-    if let Some(matrix_creds) = matches.value_of("matrix") {
-        match std::fs::File::open(matrix_creds) {
-            Ok(f) => match serde_json::from_reader(f) {
-                Ok(c) => matrix_config = Some(c),
-                Err(e) => warn!("Invalid JSON matrix_creds: {}", e),
-            },
-            Err(e) => warn!("Could not read matrix credentials: {}", e),
+    std::fs::create_dir_all(&data_dir).unwrap();
+    if let Some(s) = data_dir.to_str() {
+        info!("Using {} as data directory", s);
+    }
+
+    if config.clean {
+        if let Err(e) = bootstrap::clean(data_dir.clone()) {
+            eprintln!("Could not clean directory: {}", e);
+            return;
+        }
+    };
+    let mut settings_path = data_dir.clone();
+    settings_path.push("settings.ron");
+    let mut settings_file = match File::open(settings_path) {
+        Ok(f) => f,
+        Err(e) => {
+            warn!("Settings file could not be opened: {}", e);
+            return;
+        }
+    };
+    if config.save {
+        let mut pretty = ron::ser::PrettyConfig::default();
+        pretty.depth_limit = 4;
+        pretty.separate_tuple_members = true;
+        let config_string = match ron::ser::to_string_pretty(&config.server_config, pretty) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Could not serialize config: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = settings_file.write(config_string.as_bytes()) {
+            warn!("Could not write config file: {}", e)
+        }
+    };
+    if config.use_config {
+        match ron::de::from_reader(settings_file) {
+            Ok(s) => config.server_config = s,
+            Err(e) => warn!("Could not use config file: {}", e),
         }
     }
 
-    match matches.subcommand() {
-        ("completions", Some(sub_matches)) => {
-            let shell = sub_matches.value_of("SHELL").unwrap();
-            cli::build_cli().gen_completions_to(
-                "another-rust-coin",
-                shell.parse().unwrap(),
-                &mut io::stdout(),
-            );
-        }
-        ("", _) => {
-            if matches.is_present("clean") {
-                if let Err(e) = bootstrap::clean(data_dir.clone()) {
-                    eprintln!("Could not clean directory: {}", e);
-                    return;
-                }
-            };
-            let mut settings_path = data_dir.clone();
-            settings_path.push("settings.json");
-            let settings = match std::fs::File::open(settings_path.clone()) {
-                Ok(s) => s,
-                Err(e) => {
-                    if e.kind() == std::io::ErrorKind::NotFound {
-                        if let Err(e) = bootstrap::bootstrap(&data_dir) {
-                            eprintln!("Error bootstraping: {}", e);
-                            return;
-                        };
-                        match std::fs::File::open(settings_path.clone()) {
-                            Ok(f) => f,
-                            Err(e) => {
-                                eprintln!("Can't read settings just created: {}", e);
-                                return;
-                            }
-                        }
-                    } else {
-                        eprintln!("Cannot read settings file: {}", e);
-                        return;
-                    }
-                }
-            };
-            let mut defaults: std::collections::HashMap<String, String> =
-                serde_json::from_reader(settings).expect("Could no read settings file");
-
-            let save = matches.is_present("save");
-            let listen_port = if matches.is_present("port") {
-                let val = matches.value_of("port").unwrap();
-                if save {
-                    defaults.insert(String::from("port"), String::from(val));
-                };
-                val
-            } else if defaults.contains_key("port") {
-                defaults.get("port").unwrap()
-            } else {
-                constants::DEFAULT_PORT
-            }
-            .parse()
-            .unwrap();
-            let grpc_port = if matches.is_present("grpc_port") {
-                let val = matches.value_of("grpc_port").unwrap();
-                if save {
-                    defaults.insert(String::from("grpc_port"), String::from(val));
-                };
-                val
-            } else if defaults.contains_key("grpc_port") {
-                defaults.get("grpc_port").unwrap()
-            } else {
-                constants::DEFAULT_GRPC_PORT
-            }
-            .parse()
-            .unwrap();
-            let max_conn = if matches.is_present("max connections") {
-                let val = matches.value_of("max connections").unwrap();
-                if save {
-                    defaults.insert(String::from("max connections"), String::from(val));
-                };
-                val
-            } else if defaults.contains_key("max connections") {
-                defaults.get("max connections").unwrap()
-            } else {
-                constants::DEFAULT_MAX_CONN
-            }
-            .parse()
-            .unwrap();
-            let grpc_localhost =
-                matches.is_present("grpc_localhost") || defaults.contains_key("grpc_localhost");
-            if save {
-                let settings = match std::fs::File::open(settings_path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("Error saving settings: {}", e);
-                        return;
-                    }
-                };
-                serde_json::to_writer(settings, &defaults).unwrap();
-            }
-            if let Err(e) = Server::run(
-                max_conn,
-                &data_dir,
-                listen_port,
-                grpc_port,
-                grpc_localhost,
-                matrix_config,
-            ) {
-                error!("Server could not be launched: {}", e)
-            };
-        }
-        (_, _) => (),
+    if let Err(e) = Server::run(config.server_config) {
+        error!("Server could not be launched: {}", e)
     };
 }
