@@ -150,10 +150,15 @@ fn main() {
         info!("Using {} as data directory", s);
     }
 
+    let mut settings_path = data_dir.clone();
+    settings_path.push("settings.ron");
+    if !settings_path.exists() {
+        should_bootstrap = true;
+    }
+
     if config.clean {
         if let Err(e) = bootstrap::clean(data_dir.clone()) {
             eprintln!("Could not clean directory: {}", e);
-            return;
         }
         should_bootstrap = true;
     };
@@ -164,8 +169,6 @@ fn main() {
         }
     }
 
-    let mut settings_path = data_dir.clone();
-    settings_path.push("settings.ron");
     let mut settings_file = match File::open(settings_path) {
         Ok(f) => f,
         Err(e) => {

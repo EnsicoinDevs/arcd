@@ -5,7 +5,7 @@ pub mod matrix;
 
 pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
     let mut settings = data_dir.clone();
-    settings.push("settings.json");
+    settings.push("settings.ron");
 
     let mut blockchain_dir = std::path::PathBuf::new();
     blockchain_dir.push(data_dir.clone());
@@ -52,7 +52,7 @@ pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
 pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
     let mut settings = std::path::PathBuf::new();
     settings.push(data_dir);
-    settings.push("settings.json");
+    settings.push("settings.ron");
 
     let mut blockchain_dir = std::path::PathBuf::new();
     blockchain_dir.push(data_dir);
@@ -90,6 +90,7 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         },
         txs: Vec::new(),
     };
+    println!("{:?}", genesis.header.serialize().to_vec());
     let genesis_hash = genesis
         .double_hash()
         .iter()
