@@ -42,6 +42,7 @@ reqwest = "0.9.18"
 ron = "0.5.1"
 
 structopt = "0.2.18"
+service_book = "0.1.2"
 
 [build-dependencies]
 tower-grpc-build = { git = "https://github.com/tower-rs/tower-grpc", features = ["tower-hyper"] }

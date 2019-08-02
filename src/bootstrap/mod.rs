@@ -1,6 +1,7 @@
 use ensicoin_serializer::{Serialize, Sha256Result};
 
 use std::fs;
+pub mod discover;
 pub mod matrix;
 
 pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {
