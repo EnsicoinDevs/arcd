@@ -289,9 +289,9 @@ impl Server {
                         matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
                     }
                 }
-                info!("Shuting down RPC server");
                 #[cfg(feature = "grpc")]
                 {
+                    info!("Shuting down RPC server");
                     if self
                         .broadcast_channel
                         .write()?
