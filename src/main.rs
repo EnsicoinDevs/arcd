@@ -73,7 +73,7 @@ pub struct ServerConfig {
     #[structopt(short, long, default_value = "4224")]
     /// Port listening for connections
     pub port: u16,
-    #[cfg(feature = "service_url")]
+    #[cfg(feature = "service_discover")]
     #[structopt(long)]
     /// URL of the service discovery service
     pub service_url: Option<String>,
