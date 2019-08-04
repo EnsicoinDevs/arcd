@@ -44,6 +44,7 @@ pub struct AddressManager {
 }
 
 impl AddressManager {
+    #[cfg(feature = "matrix_discover")]
     pub fn set_bots(&mut self, bots: Vec<String>) {
         for bot in bots {
             let bot = bot.trim_start_matches(&format!("{}_", crate::constants::MAGIC));

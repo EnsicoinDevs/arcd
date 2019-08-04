@@ -1,5 +1,7 @@
+#[cfg(feature = "grpc")]
 extern crate tower_grpc_build;
 
+#[cfg(feature = "grpc")]
 fn main() {
     /*tower_grpc_build::Config::new()
     .enable_server(false)
@@ -13,3 +15,6 @@ fn main() {
         .build(&["proto/node.proto"], &["proto"])
         .unwrap_or_else(|e| panic!("protobuf compilation failed: {}", e));
 }
+
+#[cfg(not(feature = "grpc"))]
+fn main() {}

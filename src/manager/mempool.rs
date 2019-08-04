@@ -3,6 +3,8 @@ use crate::data::{
     linkedtx::{Dependency, DependencyType, LinkedTransaction},
     UtxoData,
 };
+#[cfg(not(feature = "grpc"))]
+use crate::Error;
 use ensicoin_messages::resource::Outpoint;
 use ensicoin_serializer::Sha256Result;
 use std::collections::HashMap;
@@ -17,6 +19,16 @@ pub struct Mempool {
 }
 
 impl Mempool {
+    #[cfg(not(feature = "grpc"))]
+    pub fn read(&self) -> Result<&Self, Error> {
+        Ok(&self)
+    }
+
+    #[cfg(not(feature = "grpc"))]
+    pub fn write(&mut self) -> Result<&mut Self, Error> {
+        Ok(self)
+    }
+
     pub fn new() -> Mempool {
         Mempool {
             pool: HashMap::new(),

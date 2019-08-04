@@ -1,4 +1,5 @@
 mod bootstrap;
+#[allow(dead_code)]
 mod constants;
 mod data;
 mod error;
@@ -9,45 +10,10 @@ pub use error::Error;
 
 use network::Server;
 
-extern crate bytes;
-
-extern crate ron;
-extern crate serde;
-
-extern crate futures;
-extern crate tokio;
-extern crate tokio_timer;
-
-extern crate structopt;
 #[macro_use]
 extern crate log;
-extern crate simplelog;
-
-extern crate dirs;
-
-extern crate sled;
-
-extern crate ensicoin_serializer;
-//#[macro_use]
-extern crate ensicoin_messages;
 #[macro_use]
 extern crate ensicoin_serializer_derive;
-
-extern crate generic_array;
-extern crate num_bigint;
-extern crate ripemd160;
-extern crate secp256k1;
-extern crate sha2;
-extern crate typenum;
-
-extern crate tower_grpc;
-extern crate tower_hyper;
-
-extern crate tokio_bus;
-
-extern crate tokio_signal;
-
-extern crate reqwest;
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -107,12 +73,19 @@ pub struct ServerConfig {
     #[structopt(short, long, default_value = "4224")]
     /// Port listening for connections
     pub port: u16,
+    #[cfg(feature = "service_url")]
+    #[structopt(long)]
+    /// URL of the service discovery service
+    pub service_url: Option<String>,
+    #[cfg(feature = "matrix_discover")]
     #[structopt(long)]
     /// RON credentials for matrix
     pub matrix_creds: Option<std::path::PathBuf>,
+    #[cfg(feature = "grpc")]
     #[structopt(long, short, default_value = "4225")]
     /// Port listening for gRPC requests
     pub grpc_port: u16,
+    #[cfg(feature = "grpc")]
     #[structopt(long)]
     /// Restrict gRPC requests to localhost
     pub grpc_localhost: bool,

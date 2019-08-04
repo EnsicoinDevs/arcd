@@ -28,6 +28,15 @@ pub struct PopContext {
 }
 
 impl Blockchain {
+    #[cfg(not(feature = "grpc"))]
+    pub fn read(&self) -> Result<&Self, Error> {
+        Ok(&self)
+    }
+    #[cfg(not(feature = "grpc"))]
+    pub fn write(&mut self) -> Result<&mut Self, Error> {
+        Ok(self)
+    }
+
     pub fn new(data_dir: &std::path::Path) -> Blockchain {
         let mut blockchain_dir = std::path::PathBuf::new();
         blockchain_dir.push(data_dir);

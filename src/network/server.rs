@@ -1,26 +1,32 @@
+#[cfg(feature = "matrix_discover")]
 use crate::bootstrap::matrix;
 use ensicoin_messages::message::Message;
 use futures::sync::mpsc;
 use tokio::{net::TcpListener, prelude::*};
+#[cfg(feature = "grpc")]
 use tokio_bus::Bus;
 
+#[cfg(feature = "grpc")]
+use crate::data::intern_messages::BroadcastMessage;
+#[cfg(feature = "grpc")]
+use crate::network::RPCNode;
 use crate::{
     data::{
-        intern_messages::{
-            BroadcastMessage, ConnectionMessage, ConnectionMessageContent, ServerMessage, Source,
-        },
+        intern_messages::{ConnectionMessage, ConnectionMessageContent, ServerMessage, Source},
         linkedblock::LinkedBlock,
         linkedtx::LinkedTransaction,
     },
     manager::{AddressManager, Blockchain, Mempool, NewAddition, OrphanBlockManager, UtxoManager},
-    network::{Connection, RPCNode},
+    network::Connection,
     Error, ServerConfig,
 };
+#[cfg(feature = "grpc")]
 use std::sync::{Arc, RwLock};
 
 const CHANNEL_CAPACITY: usize = 2_048;
 
 pub struct Server {
+    #[cfg(feature = "grpc")]
     broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
 
     connection_receiver: Box<dyn futures::Stream<Item = ConnectionMessage, Error = Error> + Send>,
@@ -30,7 +36,13 @@ pub struct Server {
     connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
 
     utxo_manager: UtxoManager,
+    #[cfg(feature = "grpc")]
     blockchain: Arc<RwLock<Blockchain>>,
+    #[cfg(not(feature = "grpc"))]
+    blockchain: Blockchain,
+    #[cfg(not(feature = "grpc"))]
+    mempool: Mempool,
+    #[cfg(feature = "grpc")]
     mempool: Arc<RwLock<Mempool>>,
 
     address_manager: AddressManager,
@@ -41,6 +53,7 @@ pub struct Server {
 
     orphan_manager: OrphanBlockManager,
 
+    #[cfg(feature = "matrix_discover")]
     matrix_client: Option<matrix::MatrixClient>,
 
     origin_port: u16,
@@ -132,11 +145,15 @@ impl Server {
                 ),
         );
 
+        #[cfg(feature = "grpc")]
         let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
 
         let address_manager = AddressManager::new(config.data_dir.as_ref().unwrap())?;
+        let blockchain = Blockchain::new(&config.data_dir.as_ref().unwrap());
 
+        #[allow(unused_mut)]
         let mut server = Server {
+            #[cfg(feature = "grpc")]
             broadcast_channel,
             connections: std::collections::HashMap::new(),
             connection_receiver: message_stream,
@@ -144,18 +161,24 @@ impl Server {
             collection_count: 0,
             max_connections_count: config.max_connections,
             utxo_manager: UtxoManager::new(config.data_dir.as_ref().unwrap()),
-            blockchain: Arc::new(RwLock::new(Blockchain::new(
-                &config.data_dir.as_ref().unwrap(),
-            ))),
+            #[cfg(feature = "grpc")]
+            blockchain: Arc::new(RwLock::new(blockchain)),
+            #[cfg(not(feature = "grpc"))]
+            blockchain,
+            #[cfg(feature = "grpc")]
             mempool: Arc::new(RwLock::new(Mempool::new())),
+            #[cfg(not(feature = "grpc"))]
+            mempool: Mempool::new(),
             connection_buffer: std::collections::VecDeque::new(),
             sync_counter: 3,
             orphan_manager: OrphanBlockManager::new(),
+            #[cfg(feature = "matrix_discover")]
             matrix_client: None,
             address_manager,
             origin_port: config.port,
         };
         info!("Node created, listening on port {}", config.port);
+        #[cfg(feature = "grpc")]
         let rpc = RPCNode::server(
             server.broadcast_channel.clone(),
             server.mempool.clone(),
@@ -168,23 +191,32 @@ impl Server {
             },
             config.grpc_port,
         );
-        let mut initial_bots = Vec::new();
-        if config.matrix_creds.is_some() {
-            match server.start_matrix(&config) {
-                Ok(b) => initial_bots = b,
-                Err(()) => (),
+        let mut discover_message = "Starting server with: ".to_string();
+        #[cfg(feature = "matrix_discover")]
+        {
+            let mut initial_bots = Vec::new();
+            if config.matrix_creds.is_some() {
+                match server.start_matrix(&config) {
+                    Ok(b) => initial_bots = b,
+                    Err(()) => (),
+                }
             }
+            server.address_manager.set_bots(initial_bots);
+            discover_message.push_str(&format!("{} peers from matrix,", initial_bots.len()));
         }
-        info!(
-            "Starting server with {} peers from matrix and {} from known peers",
-            initial_bots.len(),
+        discover_message.push_str(&format!(
+            "{} bots from address_manager",
             server.address_manager.len()
-        );
-        server.address_manager.set_bots(initial_bots);
+        ));
+        info!("{}", discover_message);
+        #[cfg(feature = "grpc")]
         tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
+        #[cfg(not(feature = "grpc"))]
+        tokio::run(server);
         Ok(())
     }
 
+    #[cfg(feature = "matrix_discover")]
     fn start_matrix(&mut self, config: &ServerConfig) -> Result<Vec<String>, ()> {
         let mut initial_bots = Vec::new();
         let matrix_creds = match std::fs::File::open(config.matrix_creds.as_ref().unwrap()) {
@@ -250,18 +282,24 @@ impl Server {
                 }
             }
             ConnectionMessageContent::Quit => {
-                if let Some(matrix_client) = self.matrix_client.take() {
-                    info!("Offline in matrix");
-                    matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
+                #[cfg(feature = "matrix_discover")]
+                {
+                    if let Some(matrix_client) = self.matrix_client.take() {
+                        info!("Offline in matrix");
+                        matrix::async_set_status(matrix_client.config(), &matrix::Status::Offline);
+                    }
                 }
                 info!("Shuting down RPC server");
-                if self
-                    .broadcast_channel
-                    .write()?
-                    .try_broadcast(BroadcastMessage::Quit)
-                    .is_err()
+                #[cfg(feature = "grpc")]
                 {
-                    error!("Cannot stop RPC server")
+                    if self
+                        .broadcast_channel
+                        .write()?
+                        .try_broadcast(BroadcastMessage::Quit)
+                        .is_err()
+                    {
+                        error!("Cannot stop RPC server")
+                    }
                 }
                 info!("Disconnecting Peers");
                 for conn_sender in self.connections.values_mut() {
@@ -475,18 +513,21 @@ impl Server {
                         "New best block after fork: {}",
                         ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                     );
-                    if self
-                        .broadcast_channel
-                        .write()?
-                        .try_broadcast(BroadcastMessage::BestBlock(
-                            self.blockchain
-                                .read()?
-                                .get_block(&self.blockchain.read()?.best_block_hash()?)?
-                                .unwrap(),
-                        ))
-                        .is_err()
+                    #[cfg(feature = "grpc")]
                     {
-                        error!("Could not broadcast");
+                        if self
+                            .broadcast_channel
+                            .write()?
+                            .try_broadcast(BroadcastMessage::BestBlock(
+                                self.blockchain
+                                    .read()?
+                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                    .unwrap(),
+                            ))
+                            .is_err()
+                        {
+                            error!("Could not broadcast");
+                        }
                     }
                 }
                 NewAddition::BestBlock => {
@@ -495,18 +536,21 @@ impl Server {
                         ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
                     );
                     self.utxo_manager.register_block(&lblock)?;
-                    if self
-                        .broadcast_channel
-                        .write()?
-                        .try_broadcast(BroadcastMessage::BestBlock(
-                            self.blockchain
-                                .read()?
-                                .get_block(&self.blockchain.read()?.best_block_hash()?)?
-                                .unwrap(),
-                        ))
-                        .is_err()
+                    #[cfg(feature = "grpc")]
                     {
-                        error!("Could not broadcast");
+                        if self
+                            .broadcast_channel
+                            .write()?
+                            .try_broadcast(BroadcastMessage::BestBlock(
+                                self.blockchain
+                                    .read()?
+                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                    .unwrap(),
+                            ))
+                            .is_err()
+                        {
+                            error!("Could not broadcast");
+                        }
                     }
                 }
                 NewAddition::Nothing => {

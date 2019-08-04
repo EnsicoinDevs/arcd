@@ -1,7 +1,9 @@
 use ensicoin_serializer::{Serialize, Sha256Result};
 
 use std::fs;
+#[cfg(feature = "service_discover")]
 pub mod discover;
+#[cfg(feature = "matrix_discover")]
 pub mod matrix;
 
 pub fn clean(data_dir: std::path::PathBuf) -> Result<(), String> {

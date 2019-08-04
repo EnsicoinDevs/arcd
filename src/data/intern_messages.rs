@@ -11,6 +11,7 @@ use futures::sync::mpsc;
 pub enum Source {
     Connection(RemoteIdentity),
     Server,
+    #[cfg(feature = "grpc")]
     RPC,
 }
 
@@ -21,6 +22,7 @@ impl std::fmt::Display for Source {
             "{}",
             match self {
                 Source::Connection(r) => format!("connetion [{}]", r.tcp_address),
+                #[cfg(feature = "grpc")]
                 Source::RPC => "RPC".to_string(),
                 Source::Server => "Server".to_string(),
             }
@@ -140,6 +142,7 @@ impl std::fmt::Display for ConnectionMessageContent {
     }
 }
 
+#[cfg(feature = "grpc")]
 #[derive(Clone)]
 pub enum BroadcastMessage {
     BestBlock(ensicoin_messages::resource::Block),
