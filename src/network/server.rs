@@ -411,6 +411,13 @@ impl Server {
                 }
             }
             ConnectionMessageContent::Connect(address) => {
+                let (ip, port) = (address.ip(), address.port());
+                let ip = match ip {
+                    std::net::IpAddr::V4(i) => i.to_ipv6_mapped().octets(),
+                    std::net::IpAddr::V6(i) => i.octets(),
+                };
+                let peer = crate::data::intern_messages::Peer { ip, port };
+                self.address_manager.register_addr(peer);
                 Connection::initiate(address, self.connection_sender.clone(), self.origin_port);
             }
             ConnectionMessageContent::NewTransaction(tx) => {
