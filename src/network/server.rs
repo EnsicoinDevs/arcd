@@ -148,7 +148,7 @@ impl Server {
         #[cfg(feature = "grpc")]
         let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
 
-        let address_manager = AddressManager::new(config.data_dir.as_ref().unwrap())?;
+        let address_manager = AddressManager::new(config.data_dir.as_ref().unwrap(), 4)?;
         let blockchain = Blockchain::new(&config.data_dir.as_ref().unwrap());
 
         #[allow(unused_mut)]
@@ -205,7 +205,7 @@ impl Server {
             discover_message.push_str(&format!("{} peers from matrix,", initial_bots.len()));
         }
         discover_message.push_str(&format!(
-            "{} bots from address_manager",
+            "{} nodes from address_manager",
             server.address_manager.len()
         ));
         info!("{}", discover_message);
@@ -311,6 +311,8 @@ impl Server {
                             .map_err(|e| warn!("Failed to bring down connection: {}", e)),
                     );
                 }
+                info!("Reseting connection state");
+                self.address_manager.reset_state();
                 info!("Node shutdown !");
                 return Ok(false);
             }
@@ -433,7 +435,12 @@ impl Server {
     }
 
     // TODO: Be a good peer finder
-    fn find_new_peer(&mut self) {}
+    fn find_new_peer(&mut self) {
+        for peer in self.address_manager.get_some_peers(10_usize) {
+            let address = std::net::SocketAddr::from((peer.ip, peer.port));
+            Connection::initiate(address, self.connection_sender.clone(), self.origin_port);
+        }
+    }
 
     fn handle_new_block(
         &mut self,

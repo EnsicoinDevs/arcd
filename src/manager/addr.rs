@@ -1,6 +1,7 @@
 use crate::data::intern_messages::{Peer, Source};
 use ensicoin_messages::message::{Addr, Address};
 use ensicoin_serializer::{Deserialize, Serialize};
+use rand::seq::IteratorRandom;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
@@ -36,11 +37,15 @@ impl From<sled::Error> for AddressManagerError {
 
 #[derive(Serialize, Deserialize)]
 struct PeerData {
+    given: u8,
+    not_responded: u8,
     pub timestamp: u64,
 }
 
 pub struct AddressManager {
     db: sled::Db,
+    pub no_response_limit: u8,
+    pub given_count: usize,
 }
 
 impl AddressManager {
@@ -68,13 +73,20 @@ impl AddressManager {
         }
     }
 
-    pub fn new(data_dir: &std::path::Path) -> Result<Self, AddressManagerError> {
+    pub fn new(
+        data_dir: &std::path::Path,
+        no_response_limit: u8,
+    ) -> Result<Self, AddressManagerError> {
         let mut db_dir = std::path::PathBuf::new();
         db_dir.push(data_dir);
         db_dir.push("adress_manager");
         let db = sled::Db::open(db_dir)?;
 
-        Ok(AddressManager { db })
+        Ok(AddressManager {
+            db,
+            no_response_limit,
+            given_count: 0,
+        })
     }
 
     fn get_peer(&self, peer_address: Peer) -> Result<Option<PeerData>, AddressManagerError> {
@@ -170,6 +182,8 @@ impl AddressManager {
                 if let Err(e) = self.set_peer(
                     peer,
                     PeerData {
+                        given: 0,
+                        not_responded: 0,
                         timestamp: addr.timestamp,
                     },
                 ) {
@@ -187,6 +201,8 @@ impl AddressManager {
         if let Err(e) = self.set_peer(
             peer,
             PeerData {
+                given: 0,
+                not_responded: 0,
                 timestamp: since_epoch.as_secs(),
             },
         ) {
@@ -197,6 +213,88 @@ impl AddressManager {
     pub fn new_message(&mut self, source: &Source) {
         if let Source::Connection(conn) = source {
             self.retime_addr(conn.peer)
+        }
+    }
+
+    pub fn reset_state(&mut self) {
+        for res in self.db.iter() {
+            match res {
+                Err(e) => warn!("Error iterating addr db: {:?}", e),
+                Ok((key, value)) => {
+                    let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
+                        (*value).to_owned(),
+                    ));
+                    let mut value = match PeerData::deserialize(&mut de) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            warn!("Malformed data in addr db: {:?}", e);
+                            continue;
+                        }
+                    };
+                    value.not_responded = 0;
+                    value.given = 0;
+                    if let Err(e) = self.db.insert(key, value.serialize().to_vec()) {
+                        warn!("Error in reseting not_responded in addr: {:?}", e)
+                    };
+                }
+            }
+        }
+    }
+
+    pub fn get_some_peers(&mut self, amount: usize) -> Vec<Peer> {
+        if self.given_count < self.len() {
+            let mut rng = rand::thread_rng();
+            self.db
+                .iter()
+                .filter(|res| match res {
+                    Ok(_) => true,
+                    Err(e) => {
+                        warn!("Error getting a peer: {:?}", e);
+                        false
+                    }
+                })
+                .choose_multiple(&mut rng, amount)
+                .into_iter()
+                .filter_map(|res| {
+                    let (key, value) = res.unwrap();
+                    let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
+                        (*value).to_owned(),
+                    ));
+                    let peer_data = match PeerData::deserialize(&mut de) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            warn!("Error reading value from db addr: {:?}", e);
+                            return None;
+                        }
+                    };
+                    if peer_data.not_responded > self.no_response_limit || peer_data.given != 0 {
+                        if let Err(e) = self.db.remove(key) {
+                            warn!("Could not clean value from addr db: {:?}", e)
+                        };
+                        return None;
+                    }
+                    let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
+                        (*key).to_owned(),
+                    ));
+                    match Peer::deserialize(&mut de) {
+                        Ok(p) => {
+                            let mut peer_data = peer_data;
+                            peer_data.given = 1;
+                            if let Err(e) = self.set_peer(p.clone(), peer_data) {
+                                warn!("Could not update db: {:?}", e);
+                            };
+                            self.given_count += 1;
+                            Some(p)
+                        }
+                        Err(e) => {
+                            warn!("Error reading value from db addr: {:?}", e);
+                            None
+                        }
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
         }
     }
 
