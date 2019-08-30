@@ -16,7 +16,7 @@ impl UtxoManager {
         let mut utxo_dir = std::path::PathBuf::new();
         utxo_dir.push(data_dir);
         utxo_dir.push("utxo");
-        let database = sled::Db::start_default(utxo_dir).unwrap();
+        let database = sled::Db::open(utxo_dir).unwrap();
         UtxoManager { database }
     }
 
@@ -56,7 +56,7 @@ impl UtxoManager {
                 hash: Sha256Result::clone_from_slice(hash),
                 index: (i as u32),
             };
-            self.database.set(outpoint.serialize(), data.to_vec())?;
+            self.database.insert(outpoint.serialize(), data.to_vec())?;
         }
         Ok(())
     }
@@ -72,7 +72,7 @@ impl UtxoManager {
     }
 
     pub fn delete(&self, utxo: &Outpoint) -> Result<(), Error> {
-        self.database.del(utxo.serialize())?;
+        self.database.remove(utxo.serialize())?;
         Ok(())
     }
 
@@ -98,7 +98,7 @@ impl UtxoManager {
 
     pub fn restore(&mut self, utxos: Vec<PairedUtxo>) -> Result<(), Error> {
         for pairedtx in utxos {
-            self.database.set(
+            self.database.insert(
                 pairedtx.outpoint.serialize(),
                 pairedtx.data.serialize().to_vec(),
             )?;

@@ -68,7 +68,7 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
     let mut work_dir = std::path::PathBuf::new();
     work_dir.push(data_dir);
     work_dir.push("work");
-    let work = sled::Db::start_default(work_dir).unwrap();
+    let work = sled::Db::open(work_dir).unwrap();
 
     let _ = match fs::File::create(settings) {
         Ok(f) => f,
@@ -104,19 +104,19 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         });
     println!("Welcome to ensicoin ! Setting up the DB and storing settings");
     println!("Genesis hash: {}", &genesis_hash);
-    let blockchain_db = match sled::Db::start_default(blockchain_dir) {
+    let blockchain_db = match sled::Db::open(blockchain_dir) {
         Ok(db) => db,
         Err(e) => {
             return Err(format!("Can't open blockchain database: {}", e));
         }
     };
-    let stats_db = match sled::Db::start_default(stats_dir) {
+    let stats_db = match sled::Db::open(stats_dir) {
         Ok(db) => db,
         Err(e) => {
             return Err(format!("Can't open blockchain database: {}", e));
         }
     };
-    if let Err(e) = blockchain_db.set(
+    if let Err(e) = blockchain_db.insert(
         genesis.double_hash().serialize().to_vec(),
         genesis.serialize().to_vec(),
     ) {
@@ -126,25 +126,25 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         ));
     };
 
-    if let Err(e) = stats_db.set("genesis_block", genesis.double_hash().serialize().to_vec()) {
+    if let Err(e) = stats_db.insert("genesis_block", genesis.double_hash().serialize().to_vec()) {
         return Err(format!("Could not insert genesis hash in stats: {}", e));
     };
 
-    if let Err(e) = work.set(
+    if let Err(e) = work.insert(
         genesis.double_hash().serialize().to_vec(),
         vec![0 as u8].serialize().to_vec(),
     ) {
         return Err(format!("Could not insert base work: {}", e));
     }
 
-    if let Err(e) = stats_db.set("best_block", genesis.double_hash().serialize().to_vec()) {
+    if let Err(e) = stats_db.insert("best_block", genesis.double_hash().serialize().to_vec()) {
         return Err(format!(
             "Could not insert genesis hash in best_block stats: {}",
             e
         ));
     };
 
-    if let Err(e) = stats_db.set("10_last", vec![genesis.double_hash()].serialize().to_vec()) {
+    if let Err(e) = stats_db.insert("10_last", vec![genesis.double_hash()].serialize().to_vec()) {
         return Err(format!(
             "Could not insert genesis hash in best_block stats: {}",
             e

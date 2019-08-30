@@ -41,32 +41,32 @@ impl Blockchain {
         let mut blockchain_dir = std::path::PathBuf::new();
         blockchain_dir.push(data_dir);
         blockchain_dir.push("blockchain");
-        let database = sled::Db::start_default(blockchain_dir).unwrap();
+        let database = sled::Db::open(blockchain_dir).unwrap();
 
         let mut rev_dir = std::path::PathBuf::new();
         rev_dir.push(data_dir);
         rev_dir.push("reverse_chain");
-        let reverse_chain = sled::Db::start_default(rev_dir).unwrap();
+        let reverse_chain = sled::Db::open(rev_dir).unwrap();
 
         let mut spent_tx_dir = std::path::PathBuf::new();
         spent_tx_dir.push(data_dir);
         spent_tx_dir.push("spent_tx");
-        let spent_tx = sled::Db::start_default(spent_tx_dir).unwrap();
+        let spent_tx = sled::Db::open(spent_tx_dir).unwrap();
 
         let mut stats_dir = std::path::PathBuf::new();
         stats_dir.push(data_dir);
         stats_dir.push("stats");
-        let stats = sled::Db::start_default(stats_dir).unwrap();
+        let stats = sled::Db::open(stats_dir).unwrap();
 
         let mut past_dir = std::path::PathBuf::new();
         past_dir.push(data_dir);
         past_dir.push("past_block");
-        let past_block = sled::Db::start_default(past_dir).unwrap();
+        let past_block = sled::Db::open(past_dir).unwrap();
 
         let mut work_dir = std::path::PathBuf::new();
         work_dir.push(data_dir);
         work_dir.push("work");
-        let work = sled::Db::start_default(work_dir).unwrap();
+        let work = sled::Db::open(work_dir).unwrap();
 
         Blockchain {
             stats,
@@ -152,7 +152,7 @@ impl Blockchain {
     }
 
     fn set_best_block(&mut self, hash: Sha256Result) -> Result<(), Error> {
-        self.stats.set("best_block", hash.serialize().to_vec())?;
+        self.stats.insert("best_block", hash.serialize().to_vec())?;
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.stats.get("10_last")? {
                 Some(b) => (*b).to_owned(),
@@ -164,7 +164,7 @@ impl Blockchain {
         if blocks.len() > 10 {
             blocks = blocks.split_off(1);
         }
-        self.stats.set("10_last", blocks.serialize().to_vec())?;
+        self.stats.insert("10_last", blocks.serialize().to_vec())?;
         Ok(())
     }
 
@@ -183,7 +183,7 @@ impl Blockchain {
             blocks = vec![last_block.prev_block];
             blocks.append(&mut temp);
         }
-        self.stats.set("10_last", blocks.serialize().to_vec())?;
+        self.stats.insert("10_last", blocks.serialize().to_vec())?;
         Ok(())
     }
 
@@ -348,9 +348,9 @@ impl Blockchain {
             if block.header.prev_block == best_hash || chain_work > best_work {
                 if block.header.prev_block != best_hash {
                     self.database
-                        .set(hash, block.into_block().serialize().to_vec())?;
+                        .insert(hash, block.into_block().serialize().to_vec())?;
                     self.work
-                        .set(hash, chain_work.to_bytes_be().serialize().to_vec())?;
+                        .insert(hash, chain_work.to_bytes_be().serialize().to_vec())?;
                     NewAddition::Fork
                 } else {
                     self.add_block(block)?;
@@ -358,9 +358,9 @@ impl Blockchain {
                 }
             } else {
                 self.database
-                    .set(hash, block.into_block().serialize().to_vec())?;
+                    .insert(hash, block.into_block().serialize().to_vec())?;
                 self.work
-                    .set(hash, chain_work.to_bytes_be().serialize().to_vec())?;
+                    .insert(hash, chain_work.to_bytes_be().serialize().to_vec())?;
                 NewAddition::Nothing
             },
         )
@@ -386,18 +386,18 @@ impl Blockchain {
         if block.header.height == 2015 {
             let genesis_hash = self.genesis_hash()?;
             self.past_block
-                .set(hash, genesis_hash.serialize().to_vec())?;
+                .insert(hash, genesis_hash.serialize().to_vec())?;
         } else if block.header.height >= 2016 {
             let past_of_previous = self.block_2016_before(&block.header.prev_block)?;
             let next = self.block_after(&past_of_previous)?.unwrap();
-            self.past_block.set(hash, next.serialize().to_vec())?;
+            self.past_block.insert(hash, next.serialize().to_vec())?;
         };
         self.work
-            .set(hash, chain_work.to_bytes_be().serialize().to_vec())?;
-        self.database.set(hash, raw_block.clone())?;
+            .insert(hash, chain_work.to_bytes_be().serialize().to_vec())?;
+        self.database.insert(hash, raw_block.clone())?;
         self.reverse_chain
-            .set(block.header.prev_block, hash.serialize().to_vec())?;
-        self.spent_tx.set(hash, spent_utxo)?;
+            .insert(block.header.prev_block, hash.serialize().to_vec())?;
+        self.spent_tx.insert(hash, spent_utxo)?;
         self.set_best_block(hash)?;
         Ok(())
     }
@@ -479,9 +479,9 @@ impl Blockchain {
             },
         ));
         let best_block = self.get_block(&best_block)?.unwrap();
-        self.reverse_chain.del(&best_block.header.prev_block)?;
+        self.reverse_chain.remove(&best_block.header.prev_block)?;
         self.unset_best_block()?;
-        self.stats.set(
+        self.stats.insert(
             "best_block",
             best_block.header.prev_block.serialize().to_vec(),
         )?;

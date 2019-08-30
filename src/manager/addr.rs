@@ -72,7 +72,7 @@ impl AddressManager {
         let mut db_dir = std::path::PathBuf::new();
         db_dir.push(data_dir);
         db_dir.push("adress_manager");
-        let db = sled::Db::start_default(db_dir)?;
+        let db = sled::Db::open(db_dir)?;
 
         Ok(AddressManager { db })
     }
@@ -91,7 +91,7 @@ impl AddressManager {
 
     fn set_peer(&self, peer: Peer, data: PeerData) -> Result<(), AddressManagerError> {
         self.db
-            .set(peer.serialize().to_vec(), data.serialize().to_vec())
+            .insert(peer.serialize().to_vec(), data.serialize().to_vec())
             .map(|_| ())
             .map_err(AddressManagerError::DbError)
     }
@@ -124,7 +124,7 @@ impl AddressManager {
                                     port: peer.port,
                                 })
                             } else {
-                                if let Err(e) = self.db.del(peer.serialize().to_vec()) {
+                                if let Err(e) = self.db.remove(peer.serialize().to_vec()) {
                                     warn!("Could not delete value in addr db: {}", e)
                                 }
                             }
