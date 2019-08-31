@@ -42,6 +42,26 @@ pub struct Peer {
     pub port: u16,
 }
 
+impl From<std::net::SocketAddr> for Peer {
+    fn from(socket: std::net::SocketAddr) -> Self {
+        let port = socket.port();
+        let ip = match socket.ip() {
+            std::net::IpAddr::V4(i) => i.to_ipv6_mapped().octets(),
+            std::net::IpAddr::V6(i) => i.octets(),
+        };
+        Peer { port, ip }
+    }
+}
+
+impl std::str::FromStr for Peer {
+    type Err = std::net::AddrParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let socket: std::net::SocketAddr = s.parse()?;
+        Ok(Peer::from(socket))
+    }
+}
+
 impl Deserialize for Peer {
     fn deserialize(de: &mut Deserializer) -> ensicoin_serializer::Result<Self> {
         let ip_bytes = de.extract_bytes(16)?;

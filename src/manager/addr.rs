@@ -89,6 +89,32 @@ impl AddressManager {
         })
     }
 
+    pub fn no_response(&mut self, peer_address: Peer) {
+        match self.get_peer(peer_address) {
+            Ok(Some(mut data)) => {
+                data.not_responded += 1;
+                data.given = 0;
+                let resp = if data.not_responded >= self.no_response_limit {
+                    warn!(
+                        "Connection [{}] did not respond too many times",
+                        std::net::SocketAddr::from((peer_address.ip, peer_address.port))
+                    );
+                    self.db
+                        .remove(peer_address.serialize().to_vec())
+                        .map(|_| ())
+                        .map_err(AddressManagerError::from)
+                } else {
+                    self.set_peer(peer_address, data)
+                };
+                if let Err(e) = resp {
+                    warn!("Error in updating address info: {:?}", e)
+                }
+            }
+            Ok(None) => warn!("Unlisted address unresponded"),
+            Err(e) => warn!("Error in registering no_response: {:?}", e),
+        };
+    }
+
     fn get_peer(&self, peer_address: Peer) -> Result<Option<PeerData>, AddressManagerError> {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.db.get(peer_address.serialize().to_vec())? {
@@ -231,10 +257,9 @@ impl AddressManager {
                             continue;
                         }
                     };
-                    value.not_responded = 0;
                     value.given = 0;
                     if let Err(e) = self.db.insert(key, value.serialize().to_vec()) {
-                        warn!("Error in reseting not_responded in addr: {:?}", e)
+                        warn!("Error in reseting given in addr: {:?}", e)
                     };
                 }
             }

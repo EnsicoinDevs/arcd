@@ -46,7 +46,7 @@ pub struct Server {
     mempool: Arc<RwLock<Mempool>>,
 
     address_manager: AddressManager,
-    collection_count: u64,
+    connection_count: u64,
     max_connections_count: u64,
 
     sync_counter: u64,
@@ -65,7 +65,7 @@ impl futures::Future for Server {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            if self.collection_count < 10 {
+            if self.connection_count < 10 {
                 self.find_new_peer()
             };
             match self.connection_receiver.poll() {
@@ -84,7 +84,7 @@ impl futures::Future for Server {
                     return Err(());
                 }
             }
-            if self.collection_count == 0 {
+            if self.connection_count == 0 {
                 self.find_new_peer();
             };
             while !self.connection_buffer.is_empty() {
@@ -158,7 +158,7 @@ impl Server {
             connections: std::collections::HashMap::new(),
             connection_receiver: message_stream,
             connection_sender: sender,
-            collection_count: 0,
+            connection_count: 0,
             max_connections_count: config.max_connections,
             utxo_manager: UtxoManager::new(config.data_dir.as_ref().unwrap()),
             #[cfg(feature = "grpc")]
@@ -277,7 +277,9 @@ impl Server {
         match message.content {
             ConnectionMessageContent::ConnectionFailed(address) => {
                 info!("Connection {} failed", address);
-                if self.collection_count < 10 {
+                self.address_manager
+                    .no_response(crate::data::intern_messages::Peer::from(address));
+                if self.connection_count < 10 {
                     self.find_new_peer()
                 }
             }
@@ -329,7 +331,7 @@ impl Server {
                 self.address_manager.add_addr(address)
             }
             ConnectionMessageContent::Register(sender, host) => {
-                if self.collection_count < self.max_connections_count {
+                if self.connection_count < self.max_connections_count {
                     info!("Registered [{}]", &host.tcp_address);
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
@@ -344,7 +346,7 @@ impl Server {
                     };
                     self.connections.insert(host.tcp_address, sender);
                     self.address_manager.register_addr(host.peer);
-                    self.collection_count += 1;
+                    self.connection_count += 1;
                 } else {
                     warn!("Too many connections to accept [{}]", &host.tcp_address);
                     tokio::spawn(
@@ -357,14 +359,20 @@ impl Server {
             }
             ConnectionMessageContent::Clean(host) => {
                 if self.connections.remove(&host.tcp_address).is_some() {
-                    self.collection_count -= 1;
+                    self.connection_count -= 1;
                 };
-                if self.collection_count < 10 {
+                if self.connection_count < 10 {
                     self.find_new_peer()
                 }
                 trace!("Cleaned connection [{}]", host.tcp_address);
             }
             ConnectionMessageContent::Disconnect(e, host) => {
+                if let Error::NoResponse = &e {
+                    match host.parse() {
+                        Ok(p) => self.address_manager.no_response(p),
+                        Err(e) => warn!("Host [{}] is not a socket addr: {:?}", host, e),
+                    }
+                };
                 if self.connections.contains_key(&host) {
                     self.send(host, ServerMessage::Terminate(e));
                 }
@@ -430,7 +438,7 @@ impl Server {
                 self.handle_new_block(block, message.source)?;
             }
             ConnectionMessageContent::NewConnection(socket) => {
-                if self.collection_count < self.max_connections_count {
+                if self.connection_count < self.max_connections_count {
                     let new_conn =
                         Connection::new(socket, self.connection_sender.clone(), self.origin_port);
                     trace!("new connection");
