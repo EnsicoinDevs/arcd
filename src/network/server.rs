@@ -21,7 +21,9 @@ use crate::{
     Error, ServerConfig,
 };
 #[cfg(feature = "grpc")]
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+#[cfg(feature = "grpc")]
+use std::sync::Arc;
 
 const CHANNEL_CAPACITY: usize = 2_048;
 
@@ -296,7 +298,7 @@ impl Server {
                     info!("Shuting down RPC server");
                     if self
                         .broadcast_channel
-                        .write()?
+                        .write()
                         .try_broadcast(BroadcastMessage::Quit)
                         .is_err()
                     {
@@ -335,7 +337,7 @@ impl Server {
                     info!("Registered [{}]", &host.tcp_address);
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
-                        let getblocks = self.blockchain.read()?.generate_get_blocks()?;
+                        let getblocks = self.blockchain.read().generate_get_blocks()?;
                         let (t, v) = getblocks.raw_bytes();
                         let msg = ServerMessage::SendMessage(t, v);
                         let getmempool = ensicoin_messages::message::GetMempool {};
@@ -379,8 +381,8 @@ impl Server {
             }
             ConnectionMessageContent::CheckInv(inv) => {
                 let (mut unknown, txs) =
-                    self.blockchain.read()?.get_unknown_blocks(inv.inventory)?;
-                let (mut unknown_tx, _) = self.mempool.read()?.get_unknown_tx(txs);
+                    self.blockchain.read().get_unknown_blocks(inv.inventory)?;
+                let (mut unknown_tx, _) = self.mempool.read().get_unknown_tx(txs);
                 unknown.append(&mut unknown_tx);
                 let get_data = ensicoin_messages::message::GetData { inventory: unknown };
                 if !get_data.inventory.is_empty() {
@@ -395,12 +397,12 @@ impl Server {
                 // GetData
                 if let crate::data::intern_messages::Source::Connection(remote) = message.source {
                     let (blocks, remaining) =
-                        self.blockchain.read()?.get_data(get_data.inventory)?;
+                        self.blockchain.read().get_data(get_data.inventory)?;
                     for block in blocks {
                         let (t, v) = block.raw_bytes();
                         self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
                     }
-                    let (txs, _) = self.mempool.read()?.get_data(remaining);
+                    let (txs, _) = self.mempool.read().get_data(remaining);
                     for tx in txs {
                         let (t, v) = tx.raw_bytes();
                         self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
@@ -409,7 +411,7 @@ impl Server {
             }
             ConnectionMessageContent::SyncBlocks(get_blocks) => {
                 // Handling: Best Block
-                let inv = self.blockchain.read()?.generate_inv(&get_blocks)?;
+                let inv = self.blockchain.read().generate_inv(&get_blocks)?;
                 if !inv.inventory.is_empty() {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
@@ -426,13 +428,17 @@ impl Server {
                 };
                 let peer = crate::data::intern_messages::Peer { ip, port };
                 self.address_manager.register_addr(peer);
-                Connection::initiate(address, self.connection_sender.clone(), self.origin_port);
+                Connection::initiate(
+                    std::net::SocketAddr::from((ip, port)),
+                    self.connection_sender.clone(),
+                    self.origin_port,
+                );
             }
             ConnectionMessageContent::NewTransaction(tx) => {
                 // TODO: Verify tx in mempool insert
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);
-                self.mempool.write().unwrap().insert(ltx);
+                self.mempool.write().insert(ltx);
             }
             ConnectionMessageContent::NewBlock(block) => {
                 self.handle_new_block(block, message.source)?;
@@ -468,7 +474,7 @@ impl Server {
         self.utxo_manager.link_block(&mut lblock);
         let new_target = self
             .blockchain
-            .read()?
+            .read()
             .get_target_next_block(lblock.header.timestamp)?;
         debug!(
             "Validating block {}",
@@ -476,7 +482,7 @@ impl Server {
         );
         let prev_block = match self
             .blockchain
-            .read()?
+            .read()
             .get_block(&lblock.header.prev_block)?
         {
             Some(b) => b,
@@ -498,20 +504,20 @@ impl Server {
             }
             .raw_bytes();
             self.broadcast_to_connections(ServerMessage::SendMessage(t, v));
-            let addition = self.blockchain.write()?.new_block(lblock.clone())?;
+            let addition = self.blockchain.write().new_block(lblock.clone())?;
             match addition {
                 NewAddition::Fork => {
                     info!("Handling fork");
                     self.utxo_manager.register_block(&lblock)?;
-                    self.mempool.write()?.remove_tx(&lblock);
-                    let best_block = self.blockchain.read()?.best_block_hash()?;
+                    self.mempool.write().remove_tx(&lblock);
+                    let best_block = self.blockchain.read().best_block_hash()?;
                     let common_hash =
-                        match self.blockchain.read()?.find_common_hash(best_block, hash)? {
+                        match self.blockchain.read().find_common_hash(best_block, hash)? {
                             Some(h) => h,
                             None => return Err(Error::NotFound("merge point".to_string())),
                         };
-                    let new_branch = self.blockchain.read()?.chain_until(&hash, &common_hash)?;
-                    let pop_contex = self.blockchain.write()?.pop_until(&common_hash)?;
+                    let new_branch = self.blockchain.read().chain_until(&hash, &common_hash)?;
+                    let pop_contex = self.blockchain.write().pop_until(&common_hash)?;
                     for utxo in pop_contex.utxo_to_remove {
                         self.utxo_manager.delete(&utxo)?;
                     }
@@ -519,9 +525,9 @@ impl Server {
                     for tx in pop_contex.txs_to_restore {
                         let mut ltx = LinkedTransaction::new(tx);
                         self.utxo_manager.link(&mut ltx);
-                        self.mempool.write()?.insert(ltx);
+                        self.mempool.write().insert(ltx);
                     }
-                    let block_chain = self.blockchain.read()?.chain_to_blocks(new_branch)?;
+                    let block_chain = self.blockchain.read().chain_to_blocks(new_branch)?;
                     let mut linked_chain: Vec<_> =
                         block_chain.into_iter().map(LinkedBlock::new).collect();
                     linked_chain
@@ -530,7 +536,7 @@ impl Server {
                     for lb in &linked_chain {
                         self.utxo_manager.register_block(lb)?;
                     }
-                    self.blockchain.write()?.add_chain(linked_chain)?;
+                    self.blockchain.write().add_chain(linked_chain)?;
                     trace!(
                         "New best block after fork: {}",
                         ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
@@ -539,11 +545,11 @@ impl Server {
                     {
                         if self
                             .broadcast_channel
-                            .write()?
+                            .write()
                             .try_broadcast(BroadcastMessage::BestBlock(
                                 self.blockchain
-                                    .read()?
-                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                    .read()
+                                    .get_block(&self.blockchain.read().best_block_hash()?)?
                                     .unwrap(),
                             ))
                             .is_err()
@@ -562,11 +568,11 @@ impl Server {
                     {
                         if self
                             .broadcast_channel
-                            .write()?
+                            .write()
                             .try_broadcast(BroadcastMessage::BestBlock(
                                 self.blockchain
-                                    .read()?
-                                    .get_block(&self.blockchain.read()?.best_block_hash()?)?
+                                    .read()
+                                    .get_block(&self.blockchain.read().best_block_hash()?)?
                                     .unwrap(),
                             ))
                             .is_err()
@@ -582,7 +588,7 @@ impl Server {
         } else {
             warn!("Recieved invalid Block from {}", source);
         }
-        let best_block_hash = self.blockchain.read()?.best_block_hash()?;
+        let best_block_hash = self.blockchain.read().best_block_hash()?;
         let orphan_chain = self.orphan_manager.retrieve_chain(best_block_hash);
         for (s, b) in orphan_chain {
             self.handle_new_block(b, s)?;
