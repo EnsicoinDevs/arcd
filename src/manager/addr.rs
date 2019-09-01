@@ -124,7 +124,7 @@ impl AddressManager {
             },
         ));
         PeerData::deserialize(&mut de)
-            .map(|a| Some(a))
+            .map(Some)
             .map_err(AddressManagerError::ParseError)
     }
 
@@ -162,10 +162,8 @@ impl AddressManager {
                                     ip: peer.ip,
                                     port: peer.port,
                                 })
-                            } else {
-                                if let Err(e) = self.db.remove(peer.serialize().to_vec()) {
-                                    warn!("Could not delete value in addr db: {}", e)
-                                }
+                            } else if let Err(e) = self.db.remove(peer.serialize().to_vec()) {
+                                warn!("Could not delete value in addr db: {}", e)
                             }
                         }
                         _ => warn!("Error deserializing value in addr db"),
