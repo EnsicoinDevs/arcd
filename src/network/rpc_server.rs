@@ -20,7 +20,8 @@ use crate::{
 };
 use ensicoin_serializer::{hash_to_string, Deserialize, Deserializer, Serialize, Sha256Result};
 use futures::{future, Future, Sink, Stream};
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_bus::Bus;
 use tower_grpc::{Request, Response};
@@ -140,11 +141,11 @@ impl node::server::Node for RPCNode {
         let response = Response::new(GetInfoReply {
             implementation: IMPLEMENTATION.to_string(),
             protocol_version: VERSION,
-            best_block_hash: match self.state.blockchain.read().unwrap().best_block_hash() {
+            best_block_hash: match self.state.blockchain.read().best_block_hash() {
                 Ok(a) => a.to_vec(),
                 Err(_) => Vec::new(),
             },
-            genesis_block_hash: match self.state.blockchain.read().unwrap().genesis_hash() {
+            genesis_block_hash: match self.state.blockchain.read().genesis_hash() {
                 Ok(h) => h.to_vec(),
                 Err(_) => Vec::new(),
             },
@@ -230,7 +231,7 @@ impl node::server::Node for RPCNode {
         _request: Request<GetBestBlocksRequest>,
     ) -> Self::GetBestBlocksFuture {
         let state = self.state.clone();
-        let rx = state.broadcast.write().unwrap().add_rx();
+        let rx = state.broadcast.write().add_rx();
 
         let response = rx
             .then(|m| match m {
@@ -264,12 +265,11 @@ impl node::server::Node for RPCNode {
         _request: Request<GetBlockTemplateRequest>,
     ) -> Self::GetBlockTemplateFuture {
         let state = self.state.clone();
-        let rx = state.broadcast.write().unwrap().add_rx();
-        let best_block_hash = state.blockchain.read().unwrap().best_block_hash().unwrap();
+        let rx = state.broadcast.write().add_rx();
+        let best_block_hash = state.blockchain.read().best_block_hash().unwrap();
         let best_block = state
             .blockchain
             .read()
-            .unwrap()
             .get_block(&best_block_hash)
             .unwrap()
             .unwrap();
@@ -292,7 +292,6 @@ impl node::server::Node for RPCNode {
                 let txs = state
                     .mempool
                     .read()
-                    .unwrap()
                     .get_tx()
                     .into_iter()
                     .map(tx_to_rpc)
@@ -309,7 +308,6 @@ impl node::server::Node for RPCNode {
                     state
                         .blockchain
                         .read()
-                        .unwrap()
                         .get_target_next_block(timestamp)
                         .unwrap(),
                 );
@@ -440,22 +438,11 @@ impl node::server::Node for RPCNode {
             ));
         };
         let hash = Sha256Result::clone_from_slice(&request.hash);
-        let block = match self.state.blockchain.read() {
-            Ok(l) => match l.get_block(&hash) {
-                Ok(Some(b)) => b,
-                Ok(None) => {
-                    return future::result(Err(tower_grpc::Status::new(
-                        tower_grpc::Code::NotFound,
-                        "",
-                    )))
-                }
-                Err(_) => {
-                    return future::result(Err(tower_grpc::Status::new(
-                        tower_grpc::Code::Internal,
-                        "",
-                    )))
-                }
-            },
+        let block = match self.state.blockchain.read().get_block(&hash) {
+            Ok(Some(b)) => b,
+            Ok(None) => {
+                return future::result(Err(tower_grpc::Status::new(tower_grpc::Code::NotFound, "")))
+            }
             Err(_) => {
                 return future::result(Err(tower_grpc::Status::new(tower_grpc::Code::Internal, "")))
             }
@@ -475,17 +462,14 @@ impl node::server::Node for RPCNode {
             ));
         };
         let hash = Sha256Result::clone_from_slice(&request.hash);
-        let tx = match self.state.mempool.read() {
-            Ok(l) => match l.get_tx_by_hash(&hash) {
-                Some(tx) => tx,
-                None => {
-                    return future::err(tower_grpc::Status::new(
-                        tower_grpc::Code::NotFound,
-                        hash_to_string(&hash),
-                    ))
-                }
-            },
-            Err(_) => return future::err(tower_grpc::Status::new(tower_grpc::Code::Internal, "")),
+        let tx = match self.state.mempool.read().get_tx_by_hash(&hash) {
+            Some(tx) => tx,
+            None => {
+                return future::err(tower_grpc::Status::new(
+                    tower_grpc::Code::NotFound,
+                    hash_to_string(&hash),
+                ))
+            }
         };
         future::ok(Response::new(GetTxByHashReply {
             tx: Some(tx_to_rpc(tx)),

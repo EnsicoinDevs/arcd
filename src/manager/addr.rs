@@ -35,7 +35,7 @@ impl From<sled::Error> for AddressManagerError {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct PeerData {
     given: u8,
     not_responded: u8,
@@ -92,6 +92,7 @@ impl AddressManager {
     pub fn no_response(&mut self, peer_address: Peer) {
         match self.get_peer(peer_address) {
             Ok(Some(mut data)) => {
+                self.given_count -= 1;
                 data.not_responded += 1;
                 data.given = 0;
                 let resp = if data.not_responded >= self.no_response_limit {
@@ -220,19 +221,21 @@ impl AddressManager {
     }
 
     pub fn register_addr(&mut self, peer: Peer) {
-        let now = SystemTime::now();
-        let since_epoch = now
-            .duration_since(UNIX_EPOCH)
-            .expect("Back in time are you ?");
-        if let Err(e) = self.set_peer(
-            peer,
-            PeerData {
-                given: 0,
-                not_responded: 0,
-                timestamp: since_epoch.as_secs(),
-            },
-        ) {
-            warn!("Error registering peer: {}", e)
+        if std::net::IpAddr::from(peer.ip).is_unspecified() {
+            let now = SystemTime::now();
+            let since_epoch = now
+                .duration_since(UNIX_EPOCH)
+                .expect("Back in time are you ?");
+            if let Err(e) = self.set_peer(
+                peer,
+                PeerData {
+                    given: 0,
+                    not_responded: 0,
+                    timestamp: since_epoch.as_secs(),
+                },
+            ) {
+                warn!("Error registering peer: {}", e)
+            }
         }
     }
 
@@ -292,10 +295,13 @@ impl AddressManager {
                             return None;
                         }
                     };
-                    if peer_data.not_responded > self.no_response_limit || peer_data.given != 0 {
+                    if peer_data.not_responded > self.no_response_limit {
                         if let Err(e) = self.db.remove(key) {
                             warn!("Could not clean value from addr db: {:?}", e)
                         };
+                        return None;
+                    }
+                    if peer_data.given != 0 {
                         return None;
                     }
                     let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
