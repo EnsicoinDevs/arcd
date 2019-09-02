@@ -218,8 +218,8 @@ impl AddressManager {
         }
     }
 
-    pub fn register_addr(&mut self, peer: Peer) {
-        if std::net::IpAddr::from(peer.ip).is_unspecified() {
+    pub fn register_addr(&mut self, peer: Peer, is_connected: bool) {
+        if !std::net::IpAddr::from(peer.ip).is_unspecified() {
             let now = SystemTime::now();
             let since_epoch = now
                 .duration_since(UNIX_EPOCH)
@@ -227,7 +227,7 @@ impl AddressManager {
             if let Err(e) = self.set_peer(
                 peer,
                 PeerData {
-                    given: 0,
+                    given: if is_connected { 1 } else { 0 },
                     not_responded: 0,
                     timestamp: since_epoch.as_secs(),
                 },

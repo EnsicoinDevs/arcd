@@ -347,7 +347,7 @@ impl Server {
                         self.send(host.tcp_address.clone(), msg_get_mempool);
                     };
                     self.connections.insert(host.tcp_address, sender);
-                    self.address_manager.register_addr(host.peer);
+                    self.address_manager.register_addr(host.peer, true);
                     self.connection_count += 1;
                 } else {
                     warn!("Too many connections to accept [{}]", &host.tcp_address);
@@ -427,7 +427,7 @@ impl Server {
                     std::net::IpAddr::V6(i) => i.octets(),
                 };
                 let peer = crate::data::intern_messages::Peer { ip, port };
-                self.address_manager.register_addr(peer);
+                self.address_manager.register_addr(peer, true);
                 Connection::initiate(
                     std::net::SocketAddr::from((ip, port)),
                     self.connection_sender.clone(),
