@@ -41,7 +41,7 @@ reqwest = { version = "0.9.20", optional = true }
 
 ron = "0.5.1"
 
-structopt = "0.3.0"
+structopt = { version = "0.3.0", optional = true }
 service_book = { version = "0.1.2", optional = true }
 rand = "0.7.0"
 
@@ -54,5 +54,6 @@ tower-grpc-build = { version = "0.1.0", features = ["tower-hyper"], optional = t
 grpc = ["tower-grpc-build", "tower-hyper", "tower-grpc", "prost", "tokio-bus", "parking_lot"]
 matrix_discover = ["reqwest"]
 service_discover = ["reqwest", "service_book"]
+cli-config = ["structopt"]
 
-default = ["grpc", "service_discover"]
+default = ["grpc", "service_discover", "cli-config"]

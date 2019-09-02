@@ -15,9 +15,9 @@ extern crate log;
 #[macro_use]
 extern crate ensicoin_serializer_derive;
 
-use std::fs::File;
 use std::io::prelude::*;
 use std::str::FromStr;
+#[cfg(feature = "cli-config")]
 use structopt::StructOpt;
 
 #[derive(Debug)]
@@ -43,6 +43,7 @@ impl FromStr for LogLevel {
     }
 }
 
+#[cfg(feature = "cli-config")]
 #[derive(StructOpt)]
 #[structopt(name = "arcd", about = "An ensicoin node in rust")]
 struct Config {
@@ -62,116 +63,180 @@ struct Config {
     pub server_config: ServerConfig,
 }
 
-#[derive(StructOpt, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "cli-config", derive(StructOpt))]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ServerConfig {
-    #[structopt(short = "c", long = "connections", default_value = "42")]
+    #[cfg_attr(
+        feature = "cli-config",
+        structopt(short = "c", long = "connections", default_value = "42")
+    )]
     /// Sets the maximum number of connections
     pub max_connections: u64,
-    #[structopt(long)]
+    #[cfg_attr(feature = "cli-config", structopt(long))]
     /// Changes the default directory
     pub data_dir: Option<std::path::PathBuf>,
-    #[structopt(short, long, default_value = "4224")]
+    #[cfg_attr(feature = "cli-config", structopt(short, long, default_value = "4224"))]
     /// Port listening for connections
     pub port: u16,
     #[cfg(feature = "service_discover")]
-    #[structopt(long)]
+    #[cfg_attr(feature = "cli-config", structopt(long))]
     /// URL of the service discovery service
     pub service_url: Option<String>,
     #[cfg(feature = "matrix_discover")]
-    #[structopt(long)]
+    #[cfg_attr(feature = "cli-config", structopt(long))]
     /// RON credentials for matrix
     pub matrix_creds: Option<std::path::PathBuf>,
     #[cfg(feature = "grpc")]
-    #[structopt(long, short, default_value = "4225")]
+    #[cfg_attr(feature = "cli-config", structopt(long, short, default_value = "4225"))]
     /// Port listening for gRPC requests
     pub grpc_port: u16,
     #[cfg(feature = "grpc")]
-    #[structopt(long)]
+    #[cfg_attr(feature = "cli-config", structopt(long))]
     /// Restrict gRPC requests to localhost
     pub grpc_localhost: bool,
 }
 
 fn main() {
-    let mut config = Config::from_args();
+    // Setting up the data_dir
+    #[cfg(feature = "cli-config")]
+    let server_config: ServerConfig = {
+        let mut config = Config::from_args();
 
-    let log_level = match config.log {
-        LogLevel::Debug => simplelog::LevelFilter::Debug,
-        LogLevel::Info => simplelog::LevelFilter::Info,
-        LogLevel::Error => simplelog::LevelFilter::Error,
-        LogLevel::Trace => simplelog::LevelFilter::Trace,
-    };
-    simplelog::TermLogger::init(
-        log_level,
-        simplelog::Config::default(),
-        simplelog::TerminalMode::Mixed,
-    )
-    .unwrap();
+        if config.server_config.data_dir.is_none() {
+            let mut path = dirs::data_dir().unwrap();
+            path.push(r"another-rust-coin");
+            config.server_config.data_dir = Some(path);
+        };
+        let data_dir = config.server_config.data_dir.clone().unwrap();
 
-    if config.server_config.data_dir.is_none() {
-        let mut path = dirs::data_dir().unwrap();
-        path.push(r"another-rust-coin");
-        config.server_config.data_dir = Some(path);
-    };
-    let data_dir = config.server_config.data_dir.clone().unwrap();
+        let log_level = match config.log {
+            LogLevel::Debug => simplelog::LevelFilter::Debug,
+            LogLevel::Info => simplelog::LevelFilter::Info,
+            LogLevel::Error => simplelog::LevelFilter::Error,
+            LogLevel::Trace => simplelog::LevelFilter::Trace,
+        };
+        simplelog::TermLogger::init(
+            log_level,
+            simplelog::Config::default(),
+            simplelog::TerminalMode::Mixed,
+        )
+        .unwrap();
+        let mut should_bootstrap = match std::fs::create_dir_all(&data_dir) {
+            Err(e) => e.kind() == std::io::ErrorKind::AlreadyExists,
+            Ok(_) => false,
+        };
 
-    let mut should_bootstrap = match std::fs::create_dir_all(&data_dir) {
-        Err(e) => e.kind() == std::io::ErrorKind::AlreadyExists,
-        Ok(_) => false,
-    };
-
-    if let Some(s) = data_dir.to_str() {
-        info!("Using {} as data directory", s);
-    }
-
-    let mut settings_path = data_dir.clone();
-    settings_path.push("settings.ron");
-    if !settings_path.exists() {
-        should_bootstrap = true;
-    }
-
-    if config.clean {
-        if let Err(e) = bootstrap::clean(data_dir.clone()) {
-            eprintln!("Could not clean directory: {}", e);
+        if let Some(s) = data_dir.to_str() {
+            info!("Using {} as data directory", s);
         }
-        should_bootstrap = true;
-    };
-    if should_bootstrap {
-        if let Err(e) = bootstrap::bootstrap(&data_dir) {
-            error!("Could not bootstrap: {}", e);
-            return;
-        }
-    }
 
-    let mut settings_file = match File::open(settings_path) {
-        Ok(f) => f,
-        Err(e) => {
-            warn!("Settings file could not be opened: {}", e);
-            return;
+        let mut settings_path = data_dir.clone();
+        settings_path.push("settings.ron");
+        if !settings_path.exists() {
+            should_bootstrap = true;
         }
-    };
-    if config.save {
-        let mut pretty = ron::ser::PrettyConfig::default();
-        pretty.depth_limit = 4;
-        pretty.separate_tuple_members = true;
-        let config_string = match ron::ser::to_string_pretty(&config.server_config, pretty) {
-            Ok(s) => s,
+
+        if config.clean {
+            if let Err(e) = bootstrap::clean(data_dir.clone()) {
+                eprintln!("Could not clean directory: {}", e);
+            }
+            should_bootstrap = true;
+        };
+        if should_bootstrap {
+            if let Err(e) = bootstrap::bootstrap(&data_dir) {
+                error!("Could not bootstrap: {}", e);
+                return;
+            }
+        }
+
+        let mut settings_file = match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(settings_path)
+        {
+            Ok(f) => f,
             Err(e) => {
-                warn!("Could not serialize config: {}", e);
+                warn!("Settings file could not be opened: {}", e);
                 return;
             }
         };
-        if let Err(e) = settings_file.write(config_string.as_bytes()) {
-            warn!("Could not write config file: {}", e)
+        if config.save {
+            let mut pretty = ron::ser::PrettyConfig::default();
+            pretty.depth_limit = 4;
+            pretty.separate_tuple_members = true;
+            let config_string = match ron::ser::to_string_pretty(&config.server_config, pretty) {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!("Could not serialize config: {}", e);
+                    return;
+                }
+            };
+            if let Err(e) = settings_file.write(config_string.as_bytes()) {
+                warn!("Could not write config file: {}", e)
+            }
+        };
+        if config.use_config {
+            match ron::de::from_reader(settings_file) {
+                Ok(s) => config.server_config = s,
+                Err(e) => warn!("Could not use config file: {}", e),
+            }
+        }
+        config.server_config
+    };
+    #[cfg(not(feature = "cli-config"))]
+    let server_config: ServerConfig = {
+        let mut data_dir = dirs::data_dir().unwrap();
+        data_dir.push(r"another-rust-coin");
+
+        let log_level = simplelog::LevelFilter::Info;
+        simplelog::TermLogger::init(
+            log_level,
+            simplelog::Config::default(),
+            simplelog::TerminalMode::Mixed,
+        )
+        .unwrap();
+
+        let mut should_bootstrap = match std::fs::create_dir_all(&data_dir) {
+            Err(e) => e.kind() == std::io::ErrorKind::AlreadyExists,
+            Ok(_) => false,
+        };
+
+        if let Some(s) = data_dir.to_str() {
+            info!("Using {} as data directory", s);
+        }
+
+        let mut settings_path = data_dir.clone();
+        settings_path.push("settings.ron");
+
+        if !settings_path.exists() {
+            should_bootstrap = true;
+        }
+
+        if should_bootstrap {
+            if let Err(e) = bootstrap::bootstrap(&data_dir) {
+                error!("Could not bootstrap: {}", e);
+                return;
+            }
+        }
+
+        let mut settings_file = match std::fs::File::open(settings_path) {
+            Ok(f) => f,
+            Err(e) => {
+                warn!("Settings file could not be opened: {}", e);
+                return;
+            }
+        };
+        match ron::de::from_reader(settings_file) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Could not use config file: {}", e);
+                return;
+            }
         }
     };
-    if config.use_config {
-        match ron::de::from_reader(settings_file) {
-            Ok(s) => config.server_config = s,
-            Err(e) => warn!("Could not use config file: {}", e),
-        }
-    }
 
-    if let Err(e) = Server::run(config.server_config) {
+    if let Err(e) = Server::run(server_config) {
         error!("Server could not be launched: {}", e)
     };
 }
