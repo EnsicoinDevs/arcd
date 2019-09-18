@@ -66,16 +66,23 @@ fn tx_to_rpc(tx: ensicoin_messages::resource::Transaction) -> Tx {
     }
 }
 
+fn block_header_to_rpc(header: ensicoin_messages::resource::BlockHeader) -> node::BlockHeader {
+    node::BlockHeader {
+        flags: header.flags.clone(),
+        hash: header.double_hash().to_vec(),
+        version: header.version,
+        prev_block: header.prev_block.to_vec(),
+        merkle_root: header.merkle_root.to_vec(),
+        timestamp: header.timestamp,
+        height: header.height,
+        target: header.target.to_vec(),
+        nonce: header.nonce,
+    }
+}
+
 fn block_to_rpc(block: ensicoin_messages::resource::Block) -> Block {
     Block {
-        flags: block.header.flags.clone(),
-        hash: block.header.double_hash().to_vec(),
-        version: block.header.version,
-        prev_block: block.header.prev_block.to_vec(),
-        merkle_root: block.header.merkle_root.to_vec(),
-        timestamp: block.header.timestamp,
-        height: block.header.height,
-        target: block.header.target.to_vec(),
+        header: Some(block_header_to_rpc(block.header)),
         txs: block.txs.into_iter().map(tx_to_rpc).collect(),
     }
 }
@@ -253,6 +260,14 @@ impl node::server::Node for RPCNode {
             });
 
         future::ok(Response::new(Box::new(response)))
+    }
+
+    type GetNewTxStream =
+        Box<dyn Stream<Item = node::GetNewTxReply, Error = tower_grpc::Status> + Send>;
+    type GetNewTxFuture = future::FutureResult<Response<Self::GetNewTxStream>, tower_grpc::Status>;
+
+    fn get_new_tx(&mut self, _request: Request<node::GetNewTxRequest>) -> Self::GetNewTxFuture {
+        future::ok(Response::new(Box::new(futures::stream::empty())))
     }
 
     type GetBlockTemplateStream =
@@ -449,6 +464,35 @@ impl node::server::Node for RPCNode {
         };
         future::ok(tower_grpc::Response::new(GetBlockByHashReply {
             block: Some(block_to_rpc(block)),
+            main_chain: true,
+        }))
+    }
+    type GetBlockHeaderByHashFuture =
+        future::FutureResult<Response<node::GetBlockHeaderByHashReply>, tower_grpc::Status>;
+    fn get_block_header_by_hash(
+        &mut self,
+        request: Request<node::GetBlockHeaderByHashRequest>,
+    ) -> Self::GetBlockHeaderByHashFuture {
+        let request = request.into_inner();
+        if request.hash.len() != 32 {
+            return future::err(tower_grpc::Status::new(
+                tower_grpc::Code::InvalidArgument,
+                "hash is not 32 bytes",
+            ));
+        };
+        let hash = Sha256Result::clone_from_slice(&request.hash);
+        let block = match self.state.blockchain.read().get_block(&hash) {
+            Ok(Some(b)) => b,
+            Ok(None) => {
+                return future::result(Err(tower_grpc::Status::new(tower_grpc::Code::NotFound, "")))
+            }
+            Err(_) => {
+                return future::result(Err(tower_grpc::Status::new(tower_grpc::Code::Internal, "")))
+            }
+        };
+        future::ok(tower_grpc::Response::new(node::GetBlockHeaderByHashReply {
+            header: Some(block_header_to_rpc(block.header)),
+            main_chain: true,
         }))
     }
 
