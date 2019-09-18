@@ -107,7 +107,7 @@ impl LinkedTransaction {
 
         for input in &self.transaction.inputs {
             let mut script = input.script.clone();
-            script.append(&mut match self.dependencies.get(&input.previous_output) {
+            script.concat(match self.dependencies.get(&input.previous_output) {
                 Some(dep) => dep.data.script.clone(),
                 _ => return Err(()),
             });

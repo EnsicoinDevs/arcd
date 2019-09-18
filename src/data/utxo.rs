@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use ensicoin_messages::resource::{
-    script::OP,
+    script::Script,
     tx::{Outpoint, TransactionOutput},
 };
 use ensicoin_serializer::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ pub struct PairedUtxo {
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct UtxoData {
-    pub script: Vec<OP>,
+    pub script: Script,
     pub value: u64,
     pub block_height: u32,
     pub coin_base: bool,
@@ -44,7 +44,7 @@ impl Deserialize for UtxoData {
     fn deserialize(
         de: &mut ensicoin_serializer::Deserializer,
     ) -> ensicoin_serializer::Result<Self> {
-        let script: Vec<OP> = match Vec::deserialize(de) {
+        let script = match Script::deserialize(de) {
             Ok(s) => s,
             Err(e) => {
                 return Err(ensicoin_serializer::Error::Message(format!(

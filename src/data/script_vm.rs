@@ -1,10 +1,11 @@
-use ensicoin_messages::resource::script::OP;
+use ensicoin_messages::resource::script::{Script, OP};
 use ensicoin_serializer::Sha256Result;
 
 use ripemd160::{Digest, Ripemd160};
 use secp256k1::{Message, PublicKey, Secp256k1, Signature};
 
-pub fn execute_script(code: Vec<OP>, shash: Sha256Result) -> bool {
+pub fn execute_script(code: Script, shash: Sha256Result) -> bool {
+    let code = code.into_inner();
     let mut stack: Vec<Vec<u8>> = Vec::new();
     let mut i: usize = 0;
     while i < code.len() {
