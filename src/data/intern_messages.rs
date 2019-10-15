@@ -5,7 +5,7 @@ use ensicoin_messages::{
     resource::{Block, Transaction},
 };
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
-use futures::sync::mpsc;
+use tokio::sync::mpsc;
 
 #[derive(Eq, PartialEq)]
 pub enum Source {

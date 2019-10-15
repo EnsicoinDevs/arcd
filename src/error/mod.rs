@@ -9,12 +9,11 @@ pub enum Error {
     ChannelError,
     ServerTermination,
     NoResponse,
-    TimerError(tokio_timer::Error),
+    TimerError(tokio::timer::Error),
     StreamError,
     DatabaseError(sled::Error),
     InvalidBlock,
     NotFound(String),
-    PoisonedLock,
     SignalError,
 }
 
@@ -34,7 +33,6 @@ impl std::fmt::Display for Error {
             Error::ServerTermination => write!(f, "Server terminated the connection"),
             Error::NotFound(r) => write!(f, "Resource not found: {}", r),
             Error::DatabaseError(e) => write!(f, "Database error: {}", e),
-            Error::PoisonedLock => write!(f, "Poisoned lock"),
             Error::InvalidBlock => write!(f, "Invalid Block"),
             Error::SignalError => write!(f, "Signal Error"),
         }
@@ -53,8 +51,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<tokio_timer::Error> for Error {
-    fn from(error: tokio_timer::Error) -> Self {
+impl From<tokio::timer::Error> for Error {
+    fn from(error: tokio::timer::Error) -> Self {
         Error::TimerError(error)
     }
 }
@@ -64,9 +62,8 @@ impl From<sled::Error> for Error {
         Error::DatabaseError(error)
     }
 }
-
-impl<T> From<std::sync::PoisonError<T>> for Error {
-    fn from(_: std::sync::PoisonError<T>) -> Self {
-        Error::PoisonedLock
+impl From<tokio::sync::mpsc::error::SendError> for Error {
+    fn from(_: tokio::sync::mpsc::error::SendError) -> Self {
+        Error::ChannelError
     }
 }

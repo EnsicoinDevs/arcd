@@ -1,10 +1,11 @@
 #[cfg(feature = "matrix_discover")]
 use crate::bootstrap::matrix;
 use ensicoin_messages::message::Message;
-use futures::sync::mpsc;
-use tokio::{net::TcpListener, prelude::*};
-#[cfg(feature = "grpc")]
-use tokio_bus::Bus;
+use tokio::{
+    net::TcpListener,
+    prelude::*,
+    sync::{mpsc, watch},
+};
 
 #[cfg(feature = "grpc")]
 use crate::data::intern_messages::BroadcastMessage;
@@ -21,31 +22,30 @@ use crate::{
     Error, ServerConfig,
 };
 #[cfg(feature = "grpc")]
-use parking_lot::RwLock;
-#[cfg(feature = "grpc")]
 use std::sync::Arc;
+#[cfg(feature = "grpc")]
+use tokio::sync::Mutex;
 
 const CHANNEL_CAPACITY: usize = 2_048;
 
 pub struct Server {
     #[cfg(feature = "grpc")]
-    broadcast_channel: Arc<RwLock<Bus<BroadcastMessage>>>,
+    broadcast_channel_tx: watch::Sender<BroadcastMessage>,
 
-    connection_receiver: Box<dyn futures::Stream<Item = ConnectionMessage, Error = Error> + Send>,
+    connection_receiver: mpsc::Receiver<ConnectionMessage>,
     connection_sender: mpsc::Sender<ConnectionMessage>,
 
     connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
-    connection_buffer: std::collections::VecDeque<(String, ServerMessage)>,
 
     utxo_manager: UtxoManager,
     #[cfg(feature = "grpc")]
-    blockchain: Arc<RwLock<Blockchain>>,
+    blockchain: Arc<Mutex<Blockchain>>,
     #[cfg(not(feature = "grpc"))]
     blockchain: Blockchain,
     #[cfg(not(feature = "grpc"))]
     mempool: Mempool,
     #[cfg(feature = "grpc")]
-    mempool: Arc<RwLock<Mempool>>,
+    mempool: Arc<Mutex<Mempool>>,
 
     address_manager: AddressManager,
     connection_count: u64,
@@ -61,117 +61,83 @@ pub struct Server {
     origin_port: u16,
 }
 
-impl futures::Future for Server {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            if self.connection_count < 10 {
-                self.find_new_peer()
-            };
-            match self.connection_receiver.poll() {
-                Ok(Async::Ready(None)) => (),
-                Ok(Async::Ready(Some(msg))) => match self.handle_message(msg) {
-                    Ok(false) => return Ok(Async::Ready(())),
-                    Err(e) => {
-                        error!("The server shutdown due to an error: {}", e);
-                        return Err(());
-                    }
-                    _ => (),
-                },
-                Ok(Async::NotReady) => return Ok(Async::NotReady),
-                Err(e) => {
-                    error!("Server encountered an error: {}", e);
-                    return Err(());
-                }
-            }
-            if self.connection_count == 0 {
-                self.find_new_peer();
-            };
-            while !self.connection_buffer.is_empty() {
-                let (dest, msg) = self.connection_buffer.pop_front().unwrap();
-                match self.connections.get_mut(&dest).unwrap().start_send(msg) {
-                    Ok(AsyncSink::NotReady(msg)) => self.connection_buffer.push_front((dest, msg)),
-                    Err(e) => warn!("Can't conctact [{}] connection: {}", dest, e),
-                    Ok(AsyncSink::Ready) => {
-                        match self.connections.get_mut(&dest).unwrap().poll_complete() {
-                            Ok(Async::Ready(_)) => (),
-                            Ok(Async::NotReady) => return Ok(Async::NotReady),
-                            Err(e) => warn!("Can't contact [{}] connection: {}", dest, e),
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 impl Server {
     fn send(&mut self, dest: String, msg: crate::data::intern_messages::ServerMessage) {
         self.connection_buffer.push_back((dest, msg));
     }
 
-    pub fn run(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
         let listener = TcpListener::bind(&std::net::SocketAddr::new(
             "0.0.0.0".parse().unwrap(),
             config.port,
-        ))?;
-        let inbound_connection_stream = listener
-            .incoming()
-            .map(|socket| {
-                trace!(
-                    "Picked up connection: {}",
-                    socket.peer_addr().unwrap().to_string()
-                );
-                ConnectionMessage {
-                    content: ConnectionMessageContent::NewConnection(socket),
-                    source: Source::Server,
+        ))
+        .await?;
+        tokio::spawn(async move {
+            loop {
+                let (socket, addr) = match listener.accept().await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("Error accepting connection: {:?}", e);
+                        continue;
+                    }
+                };
+                trace!("Picked up connection: {}", addr.to_string());
+                if let Err(e) = sender
+                    .send(ConnectionMessage {
+                        content: ConnectionMessageContent::NewConnection(socket),
+                        source: Source::Server,
+                    })
+                    .await
+                {
+                    warn!("Could not notify server of new connection");
+                    break;
                 }
-            })
-            .map_err(Error::from);
-        let message_stream = Box::new(
-            receiver
-                .map_err(|_| Error::ChannelError)
-                .select(inbound_connection_stream)
-                .select(
-                    tokio_signal::ctrl_c()
-                        .flatten_stream()
-                        .map(|_| ConnectionMessage {
-                            content: ConnectionMessageContent::Quit,
-                            source: Source::Server,
-                        })
-                        .map_err(|_| Error::SignalError),
-                ),
-        );
-
-        #[cfg(feature = "grpc")]
-        let broadcast_channel = Arc::new(RwLock::from(Bus::new(30)));
+            }
+        });
+        tokio::spawn(async move {
+            let ctrl_c = tokio::net::signal::ctrl_c().expect("Could not register signal handler");
+            let stop_sig = ctrl_c.next().await;
+            sender
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::Quit,
+                    source: Source::Server,
+                })
+                .await
+                .expect("Quit signal could not be processed");
+        });
 
         let address_manager = AddressManager::new(config.data_dir.as_ref().unwrap(), 4)?;
         let blockchain = Blockchain::new(&config.data_dir.as_ref().unwrap());
 
+        #[cfg(feature = "grpc")]
+        let (broadcast_channel_tx, broadcast_channel_rx) = {
+            let best_block_hash = blockchain.best_block_hash().expect("Blockchain error");
+            let best_block = blockchain
+                .get_block(&best_block_hash)
+                .expect("Blockchain error");
+            watch::channel(BroadcastMessage::BestBlock(best_block.unwrap()))
+        };
+
         #[allow(unused_mut)]
         let mut server = Server {
             #[cfg(feature = "grpc")]
-            broadcast_channel,
+            broadcast_channel_tx,
             connections: std::collections::HashMap::new(),
-            connection_receiver: message_stream,
+            connection_receiver: receiver,
             connection_sender: sender,
             connection_count: 0,
             max_connections_count: config.max_connections,
             utxo_manager: UtxoManager::new(config.data_dir.as_ref().unwrap()),
             #[cfg(feature = "grpc")]
-            blockchain: Arc::new(RwLock::new(blockchain)),
+            blockchain: Arc::new(Mutex::new(blockchain)),
             #[cfg(not(feature = "grpc"))]
             blockchain,
             #[cfg(feature = "grpc")]
-            mempool: Arc::new(RwLock::new(Mempool::new())),
+            mempool: Arc::new(Mutex::new(Mempool::new())),
             #[cfg(not(feature = "grpc"))]
             mempool: Mempool::new(),
-            connection_buffer: std::collections::VecDeque::new(),
             sync_counter: 3,
             orphan_manager: OrphanBlockManager::new(),
             #[cfg(feature = "matrix_discover")]
@@ -180,19 +146,6 @@ impl Server {
             origin_port: config.port,
         };
         info!("Node created, listening on port {}", config.port);
-        #[cfg(feature = "grpc")]
-        let rpc = RPCNode::server(
-            server.broadcast_channel.clone(),
-            server.mempool.clone(),
-            server.blockchain.clone(),
-            server.connection_sender.clone(),
-            if config.grpc_localhost {
-                "127.0.0.1"
-            } else {
-                "0.0.0.0"
-            },
-            config.grpc_port,
-        );
         let mut discover_message = "Starting server with: ".to_string();
         #[cfg(feature = "matrix_discover")]
         {
@@ -212,9 +165,28 @@ impl Server {
         ));
         info!("{}", discover_message);
         #[cfg(feature = "grpc")]
-        tokio::run(rpc.select(server).map_err(|_| ()).map(|_| ()));
+        {
+            let rpc = RPCNode::new(
+                broadcast_channel_rx,
+                server.mempool.clone(),
+                server.blockchain.clone(),
+                server.connection_sender.clone(),
+            );
+            let addr = format!("{}:{}", "[::1]", config.grpc_port).parse().unwrap();
+            let rpc_server =
+                tonic::transport::Server::builder().serve(addr, super::node::NodeServer::new(rpc));
+            match futures::future::select(Box::pin(server.main_loop()), Box::pin(rpc_server)).await
+            {
+                futures::future::Either::Left((res, _)) => res.unwrap(),
+                futures::future::Either::Right((res, _)) => res.unwrap(),
+            };
+        }
         #[cfg(not(feature = "grpc"))]
-        tokio::run(server);
+        server.main_loop().await?;
+        Ok(())
+    }
+
+    async fn main_loop(self) -> Result<(), Error> {
         Ok(())
     }
 
@@ -273,7 +245,7 @@ impl Server {
     }
 
     // The boolean means should execution continue or not
-    fn handle_message(&mut self, message: ConnectionMessage) -> Result<bool, Error> {
+    async fn handle_message(&mut self, message: ConnectionMessage) -> Result<bool, Error> {
         debug!("Server handling {}", message);
         self.address_manager.new_message(&message.source);
         match message.content {
@@ -297,9 +269,9 @@ impl Server {
                 {
                     info!("Shuting down RPC server");
                     if self
-                        .broadcast_channel
-                        .write()
-                        .try_broadcast(BroadcastMessage::Quit)
+                        .broadcast_channel_tx
+                        .send(BroadcastMessage::Quit)
+                        .await
                         .is_err()
                     {
                         error!("Cannot stop RPC server")
@@ -307,13 +279,12 @@ impl Server {
                 }
                 info!("Disconnecting Peers");
                 for conn_sender in self.connections.values_mut() {
-                    tokio::spawn(
-                        conn_sender
-                            .clone()
-                            .send(ServerMessage::Terminate(Error::ServerTermination))
-                            .map(|_| ())
-                            .map_err(|e| warn!("Failed to bring down connection: {}", e)),
-                    );
+                    if let Err(e) = conn_sender
+                        .send(ServerMessage::Terminate(Error::ServerTermination))
+                        .await
+                    {
+                        warn!("Could not shutdown connection")
+                    }
                 }
                 info!("Reseting connection state");
                 self.address_manager.reset_state();
@@ -327,7 +298,23 @@ impl Server {
                 }
             }
             ConnectionMessageContent::NewAddr(addr) => {
-                crate::network::verify_addr(addr, self.connection_sender.clone());
+                for address in addr.addresses {
+                    match tokio::net::TcpStream::connect((
+                        std::net::IpAddr::from(address.ip),
+                        address.port,
+                    ))
+                    .timeout(std::time::Duration::from_millis(500))
+                    .await
+                    {
+                        Ok(Ok(_)) => self.address_manager.add_addr(address),
+                        Err(_) | Ok(Err(_)) => {
+                            warn!(
+                                "Recieved invalid address: {:?}:{}",
+                                address.ip, address.port
+                            );
+                        }
+                    }
+                }
             }
             ConnectionMessageContent::VerifiedAddr(address) => {
                 self.address_manager.add_addr(address)
@@ -337,7 +324,7 @@ impl Server {
                     info!("Registered [{}]", &host.tcp_address);
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
-                        let getblocks = self.blockchain.read().generate_get_blocks()?;
+                        let getblocks = self.blockchain.lock().await.generate_get_blocks()?;
                         let (t, v) = getblocks.raw_bytes();
                         let msg = ServerMessage::SendMessage(t, v);
                         let getmempool = ensicoin_messages::message::GetMempool {};
@@ -351,12 +338,9 @@ impl Server {
                     self.connection_count += 1;
                 } else {
                     warn!("Too many connections to accept [{}]", &host.tcp_address);
-                    tokio::spawn(
-                        sender
-                            .send(ServerMessage::Terminate(Error::ServerTermination))
-                            .map(|_| ())
-                            .map_err(|_| ()),
-                    );
+                    sender
+                        .send(ServerMessage::Terminate(Error::ServerTermination))
+                        .await?;
                 }
             }
             ConnectionMessageContent::Clean(host) => {
@@ -380,9 +364,12 @@ impl Server {
                 }
             }
             ConnectionMessageContent::CheckInv(inv) => {
-                let (mut unknown, txs) =
-                    self.blockchain.read().get_unknown_blocks(inv.inventory)?;
-                let (mut unknown_tx, _) = self.mempool.read().get_unknown_tx(txs);
+                let (mut unknown, txs) = self
+                    .blockchain
+                    .lock()
+                    .await
+                    .get_unknown_blocks(inv.inventory)?;
+                let (mut unknown_tx, _) = self.mempool.lock().await.get_unknown_tx(txs);
                 unknown.append(&mut unknown_tx);
                 let get_data = ensicoin_messages::message::GetData { inventory: unknown };
                 if !get_data.inventory.is_empty() {
@@ -397,12 +384,12 @@ impl Server {
                 // GetData
                 if let crate::data::intern_messages::Source::Connection(remote) = message.source {
                     let (blocks, remaining) =
-                        self.blockchain.read().get_data(get_data.inventory)?;
+                        self.blockchain.lock().await.get_data(get_data.inventory)?;
                     for block in blocks {
                         let (t, v) = block.raw_bytes();
                         self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
                     }
-                    let (txs, _) = self.mempool.read().get_data(remaining);
+                    let (txs, _) = self.mempool.lock().await.get_data(remaining);
                     for tx in txs {
                         let (t, v) = tx.raw_bytes();
                         self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
@@ -411,7 +398,7 @@ impl Server {
             }
             ConnectionMessageContent::SyncBlocks(get_blocks) => {
                 // Handling: Best Block
-                let inv = self.blockchain.read().generate_inv(&get_blocks)?;
+                let inv = self.blockchain.lock().await.generate_inv(&get_blocks)?;
                 if !inv.inventory.is_empty() {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
@@ -438,7 +425,7 @@ impl Server {
                 // TODO: Verify tx in mempool insert
                 let mut ltx = LinkedTransaction::new(tx);
                 self.utxo_manager.link(&mut ltx);
-                self.mempool.write().insert(ltx);
+                self.mempool.lock().await.insert(ltx);
             }
             ConnectionMessageContent::NewBlock(block) => {
                 self.handle_new_block(block, message.source)?;
@@ -448,7 +435,7 @@ impl Server {
                     let new_conn =
                         Connection::new(socket, self.connection_sender.clone(), self.origin_port);
                     trace!("new connection");
-                    tokio::spawn(new_conn);
+                    tokio::spawn(new_conn.run());
                 }
             }
         }

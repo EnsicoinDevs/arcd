@@ -15,8 +15,7 @@ extern crate log;
 #[macro_use]
 extern crate ensicoin_serializer_derive;
 
-use std::io::prelude::*;
-use std::str::FromStr;
+use std::{io::prelude::*, str::FromStr};
 #[cfg(feature = "cli-config")]
 use structopt::StructOpt;
 

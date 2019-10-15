@@ -1,13 +1,11 @@
-mod address_verifier;
 mod connection;
 #[cfg(feature = "grpc")]
 mod rpc_server;
 mod server;
 
-pub use address_verifier::verify_addr;
 pub use connection::{Connection, State as ConnectionState};
 #[cfg(feature = "grpc")]
-pub use rpc_server::RPCNode;
+pub use rpc_server::{node, RPCNode};
 pub use server::Server;
 
 use std::time::{SystemTime, UNIX_EPOCH};

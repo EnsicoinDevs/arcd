@@ -1,5 +1,4 @@
-use futures::sync::mpsc;
-use tokio::{net::TcpStream, prelude::*};
+use tokio::{net::TcpStream, prelude::*, sync::mpsc};
 
 use ensicoin_serializer::{Deserialize, Deserializer};
 
@@ -22,6 +21,13 @@ type ConnectionSender = mpsc::Sender<ConnectionMessage>;
 
 const CHANNEL_CAPACITY: usize = 2_048;
 
+#[derive(Debug)]
+pub enum CreationError {
+    HandshakeError,
+    IoError(tokio::io::Error),
+    TimedOut,
+}
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum State {
     Initiated,
@@ -37,14 +43,13 @@ impl std::fmt::Display for State {
     }
 }
 
+type FramedStream = tokio::codec::Framed<tokio::net::TcpStream, MessageCodec>;
+
 pub struct Connection {
     state: State,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     server_sender: mpsc::Sender<ServerMessage>,
-    message_stream: Box<dyn futures::Stream<Item = ServerMessage, Error = Error> + Send>,
-    message_sink: Box<dyn Sink<SinkItem = Bytes, SinkError = Error> + Send>,
-    message_buffer: std::collections::VecDeque<(MessageType, Bytes)>,
-    server_buffer: std::collections::VecDeque<ConnectionMessage>,
+    frame: FramedStream,
     version: u32,
     remote: String,
     waiting_ping: bool,
@@ -94,122 +99,7 @@ impl Connection {
         }
         Ok(())
     }
-}
 
-impl futures::Future for Connection {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            trace!("Polled");
-            match self.message_sink.poll_complete() {
-                Ok(Async::Ready(_)) => {
-                    trace!("Sent message to remote");
-                }
-                Ok(Async::NotReady) => {
-                    trace!("Sink has not sent");
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => {
-                    self.terminate(e);
-                    return Err(());
-                }
-            }
-            debug!("Message count: {}", self.message_buffer.len());
-            while !self.message_buffer.is_empty() {
-                let (t, v) = self.message_buffer.pop_front().unwrap();
-                match t {
-                    ensicoin_messages::message::MessageType::Ping
-                    | ensicoin_messages::message::MessageType::Pong => {
-                        trace!("Sending {} to [{}]", t, self.remote())
-                    }
-                    _ => info!("Sending {} to [{}]", t, self.remote()),
-                };
-                match self.message_sink.start_send(v) {
-                    Ok(AsyncSink::Ready) => {
-                        debug!("Started sending");
-                    }
-                    Ok(AsyncSink::NotReady(msg)) => {
-                        self.message_buffer.push_front((t, msg));
-                        trace!("Sender not ready, queued");
-                        return Ok(Async::NotReady);
-                    }
-                    Err(e) => {
-                        self.terminate(e);
-                        return Err(());
-                    }
-                }
-            }
-            debug!("Finished sending messages");
-            match self.message_sink.poll_complete() {
-                Ok(Async::Ready(_)) => {
-                    trace!("Sent message to remote");
-                }
-                Ok(Async::NotReady) => {
-                    trace!("Sink has not sent");
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => {
-                    self.terminate(e);
-                    return Err(());
-                }
-            }
-            match self.connection_sender.poll_complete() {
-                Ok(Async::Ready(_)) => {
-                    trace!("Sent message to server");
-                }
-                Ok(Async::NotReady) => {
-                    trace!("Can't send message, not ready");
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => panic!("Connection can't communicate with server: {}", e),
-            }
-            while !self.server_buffer.is_empty() {
-                match self
-                    .connection_sender
-                    .start_send(self.server_buffer.pop_front().unwrap())
-                {
-                    Ok(AsyncSink::Ready) => (),
-                    Ok(AsyncSink::NotReady(msg)) => {
-                        self.server_buffer.push_front(msg);
-                        trace!("Server message sink not ready");
-                    }
-                    Err(e) => panic!("Connection can't communicate with server: {}", e),
-                }
-            }
-            debug!("Finished sending server messages");
-            match self.connection_sender.poll_complete() {
-                Ok(Async::Ready(_)) => {
-                    trace!("Sent message to server");
-                }
-                Ok(Async::NotReady) => {
-                    trace!("Can't send message, not ready");
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => panic!("Connection can't communicate with server: {}", e),
-            }
-
-            match self.message_stream.poll() {
-                Ok(Async::Ready(None)) => (),
-                Ok(Async::Ready(Some(msg))) => {
-                    trace!("Handling server message: {:?}", msg);
-                    self.handle_server_message(msg)?;
-                }
-                Ok(Async::NotReady) => {
-                    debug!("Waiting connection event");
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => {
-                    self.terminate(e);
-                    return Err(());
-                }
-            }
-        }
-    }
-}
-
-impl Connection {
     fn create_message(
         &self,
         content: intern_messages::ConnectionMessageContent,
@@ -229,7 +119,7 @@ impl Connection {
         let (message_sink, message_stream) =
             tokio::codec::Framed::new(stream, MessageCodec::new()).split();
 
-        let timer = tokio_timer::Interval::new_interval(std::time::Duration::from_secs(42))
+        let timer = tokio::timer::Interval::new_interval(std::time::Duration::from_secs(42))
             .map(|_| ServerMessage::Tick)
             .map_err(Error::TimerError);
 
@@ -259,57 +149,47 @@ impl Connection {
         }
     }
 
-    pub fn initiate(address: std::net::SocketAddr, sender: ConnectionSender, origin_port: u16) {
-        tokio::spawn(
-            tokio::net::TcpStream::connect(&address)
-                .map(Some)
-                .map_err(|_| ())
-                .select(
-                    tokio_timer::Delay::new(
-                        std::time::Instant::now() + std::time::Duration::from_secs(3),
-                    )
-                    .map(|_| None)
-                    .map_err(|_| ()),
-                )
-                .then(
-                    move |f| -> Box<dyn futures::Future<Item = (), Error = ()> + Send> {
-                        match f {
-                            Ok((Some(stream), _)) => {
-                                let remote = stream.peer_addr().unwrap().to_string();
-                                info!("connected to [{}]", remote);
-                                let mut conn = Connection::new(stream, sender, origin_port);
-                                let (t, v) =
-                                    Whoami::new(create_self_address(origin_port)).raw_bytes();
-                                conn.state = State::Initiated;
-                                conn.buffer_message(t, v).unwrap();
-                                Box::new(conn)
-                            }
-                            Err(_) | Ok((None, _)) => Box::new(
-                                sender
-                                    .clone()
-                                    .send(ConnectionMessage {
-                                        content: ConnectionMessageContent::ConnectionFailed(
-                                            address,
-                                        ),
-                                        source: crate::data::intern_messages::Source::Server,
-                                    })
-                                    .map(|_| ())
-                                    .map_err(|_| ()),
-                            ),
-                        }
-                    },
-                ),
-        );
+    pub async fn initiate(
+        address: std::net::SocketAddr,
+        sender: ConnectionSender,
+        origin_port: u16,
+    ) -> Result<(), CreationError> {
+        let stream = match tokio::timer::Timeout::new(
+            tokio::net::TcpStream::connect(&address),
+            std::time::Duration::from_secs(2),
+        )
+        .await
+        {
+            Ok(Ok(s)) => s,
+            Err(_) => return Err(CreationError::TimedOut),
+            Ok(Err(e)) => return Err(CreationError::IoError(e)),
+        };
+        let remote = stream.peer_addr().unwrap().to_string();
+        info!("connected to [{}]", remote);
+        let mut conn = Connection::new(stream, sender, origin_port);
+        let (t, v) = Whoami::new(create_self_address(origin_port)).raw_bytes();
+        conn.state = State::Initiated;
+        if let Err(e) = conn.frame.send(v).await {
+            warn!("Could not create connection: {:?}", e);
+            return Err(CreationError::HandshakeError);
+        };
+        Ok(())
     }
+    pub async fn run(self) {}
 
     pub fn remote(&self) -> &str {
         &self.remote
     }
 
-    pub fn buffer_message(&mut self, t: MessageType, v: Bytes) -> Result<(), Error> {
+    pub async fn send(&mut self, t: MessageType, v: Bytes) -> Result<(), Error> {
         if self.state == State::Ack || t == MessageType::Whoami || t == MessageType::WhoamiAck {
-            trace!("buffering {} for [{}]", t, self.remote());
-            self.message_buffer.push_back((t, v));
+            match t {
+                MessageType::Ping | MessageType::Pong => {
+                    debug!("buffering {} for [{}]", t, self.remote())
+                }
+                _ => info!("buffering {} for [{}]", t, self.remote()),
+            };
+            self.frame.send(v).await?;
             Ok(())
         } else {
             Err(Error::InvalidConnectionState(format!("{}", self.state)))
