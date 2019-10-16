@@ -23,6 +23,17 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, watch, Mutex};
 use tonic::{Request, Response, Status};
 
+
+fn internal<T, E: std::fmt::Debug>(res: Result<T, E>) -> Result<T, Status> {
+    match res {
+        Err(e) => {
+            warn!("Internal error: {:?}", e);
+            Err(Status::new(tonic::Code::Internal, ""))
+        }
+        Ok(v) => Ok(v)
+    }
+}
+
 fn tx_to_rpc(tx: ensicoin_messages::resource::Transaction) -> Tx {
     Tx {
         hash: tx.double_hash().to_vec(),
@@ -173,12 +184,12 @@ impl node::server::Node for RPCNode {
                 ));
             }
         };
-        self.server_sender
+        internal(self.server_sender.clone()
             .send(ConnectionMessage {
                 content: ConnectionMessageContent::NewTransaction(tx),
                 source: Source::RPC,
             })
-            .await;
+            .await)?;
         Ok(Response::new(PublishRawTxReply {}))
     }
 
@@ -200,18 +211,18 @@ impl node::server::Node for RPCNode {
                 ));
             }
         };
-        self.server_sender
+        internal(self.server_sender.clone()
             .send(ConnectionMessage {
                 content: ConnectionMessageContent::NewBlock(block),
                 source: Source::RPC,
             })
-            .await;
+            .await)?;
         Ok(Response::new(PublishRawBlockReply {}))
     }
 
     type GetBestBlocksStream = mpsc::Receiver<Result<GetBestBlocksReply, Status>>;
 
-    fn get_best_blocks(
+    async fn get_best_blocks(
         &self,
         _request: Request<GetBestBlocksRequest>,
     ) -> Reply<Self::GetBestBlocksStream> {
@@ -241,7 +252,7 @@ impl node::server::Node for RPCNode {
         &self,
         _request: Request<GetBlockTemplateRequest>,
     ) -> Reply<Self::GetBlockTemplateStream> {
-        let watch_rx = self.broadcast.clone();
+        let mut watch_rx = self.broadcast.clone();
         let best_block_hash = self.blockchain.lock().await.best_block_hash().unwrap();
         let best_block = self
             .blockchain
@@ -269,7 +280,7 @@ impl node::server::Node for RPCNode {
                     _ => unreachable!(),
                 };
                 let (txs, block_template) =
-                    RPCNode::produce_block_template(mempool, blockchain, &block).await;
+                    RPCNode::produce_block_template(mempool.clone(), blockchain.clone(), &block).await;
                 out_tx
                     .send(Ok(GetBlockTemplateReply {
                         txs,
@@ -312,12 +323,12 @@ impl node::server::Node for RPCNode {
             }
         };
         info!("[grpc] Connect to: {}", &address);
-        self.server_sender
+        internal(self.server_sender.clone()
             .send(ConnectionMessage {
                 content: ConnectionMessageContent::Connect(address),
                 source: Source::RPC,
             })
-            .await;
+            .await)?;
         Ok(tonic::Response::new(ConnectPeerReply {}))
     }
     async fn disconnect_peer(
@@ -353,10 +364,10 @@ impl node::server::Node for RPCNode {
             }
         };
         info!("[grpc] Disconnect from: {}", &address);
-        self.server_sender.send(ConnectionMessage {
+        internal(self.server_sender.clone().send(ConnectionMessage {
             content: ConnectionMessageContent::Disconnect(crate::Error::ServerTermination, address),
             source: Source::RPC,
-        });
+        }).await)?;
         Ok(tonic::Response::new(DisconnectPeerReply {}))
     }
 

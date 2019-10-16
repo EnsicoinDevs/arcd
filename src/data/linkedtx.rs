@@ -93,10 +93,10 @@ impl LinkedTransaction {
         for input in &self.transaction.inputs {
             hasher_outpoints.input(input.previous_output.serialize());
         }
-        let hash = hasher_outpoints.result();
-        let mut hasher_outpoints = sha2::Sha256::default();
-        hasher_outpoints.input(hash);
+        let simple_outpoint_hash = hasher_outpoints.result();
 
+        let mut hasher_outpoints = sha2::Sha256::default();
+        hasher_outpoints.input(simple_outpoint_hash);
         let hash_outpoints = hasher_outpoints.result();
 
         let mut hasher_outputs = sha2::Sha256::default();

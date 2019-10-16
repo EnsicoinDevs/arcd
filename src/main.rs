@@ -95,7 +95,8 @@ pub struct ServerConfig {
     pub grpc_localhost: bool,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Setting up the data_dir
     #[cfg(feature = "cli-config")]
     let server_config: ServerConfig = {
@@ -235,7 +236,7 @@ fn main() {
         }
     };
 
-    if let Err(e) = Server::run(server_config) {
-        error!("Server could not be launched: {}", e)
+    if let Err(e) = Server::run(server_config).await {
+        error!("Error running server: {}", e)
     };
 }

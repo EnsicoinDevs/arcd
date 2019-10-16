@@ -62,18 +62,15 @@ pub struct Server {
 }
 
 impl Server {
-    fn send(&mut self, dest: String, msg: crate::data::intern_messages::ServerMessage) {
-        self.connection_buffer.push_back((dest, msg));
-    }
-
     pub async fn run(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
-        let listener = TcpListener::bind(&std::net::SocketAddr::new(
+        let mut listener = TcpListener::bind(&std::net::SocketAddr::new(
             "0.0.0.0".parse().unwrap(),
             config.port,
         ))
         .await?;
+        let mut sender_clone = sender.clone();
         tokio::spawn(async move {
             loop {
                 let (socket, addr) = match listener.accept().await {
@@ -84,22 +81,23 @@ impl Server {
                     }
                 };
                 trace!("Picked up connection: {}", addr.to_string());
-                if let Err(e) = sender
+                if let Err(e) = sender_clone
                     .send(ConnectionMessage {
                         content: ConnectionMessageContent::NewConnection(socket),
                         source: Source::Server,
                     })
                     .await
                 {
-                    warn!("Could not notify server of new connection");
+                    warn!("Could not notify server of new connection: {:?}", e);
                     break;
                 }
             }
         });
+        let mut sender_clone = sender.clone();
         tokio::spawn(async move {
-            let ctrl_c = tokio::net::signal::ctrl_c().expect("Could not register signal handler");
-            let stop_sig = ctrl_c.next().await;
-            sender
+            let mut ctrl_c = tokio::net::signal::ctrl_c().expect("Could not register signal handler");
+            ctrl_c.next().await;
+            sender_clone
                 .send(ConnectionMessage {
                     content: ConnectionMessageContent::Quit,
                     source: Source::Server,
@@ -173,8 +171,8 @@ impl Server {
                 server.connection_sender.clone(),
             );
             let addr = format!("{}:{}", "[::1]", config.grpc_port).parse().unwrap();
-            let rpc_server =
-                tonic::transport::Server::builder().serve(addr, super::node::NodeServer::new(rpc));
+            let rpc_server = tonic::transport::Server::builder()
+                .serve(addr, super::node::server::NodeServer::new(rpc));
             match futures::future::select(Box::pin(server.main_loop()), Box::pin(rpc_server)).await
             {
                 futures::future::Either::Left((res, _)) => res.unwrap(),
@@ -186,7 +184,10 @@ impl Server {
         Ok(())
     }
 
-    async fn main_loop(self) -> Result<(), Error> {
+    async fn main_loop(mut self) -> Result<(), Error> {
+        while let Some(message) = self.connection_receiver.recv().await {
+            self.handle_message(message).await?;
+        }
         Ok(())
     }
 
@@ -237,11 +238,23 @@ impl Server {
         Ok(initial_bots)
     }
 
-    fn broadcast_to_connections(&mut self, message: ServerMessage) {
+    async fn broadcast_to_connections(&mut self, message: ServerMessage) -> Result<(), Error> {
         let remotes: Vec<_> = self.connections.keys().cloned().collect();
         for remote in remotes {
-            self.send(remote.clone(), message.clone());
+            self.send(&remote, message.clone()).await?;
         }
+        Ok(())
+    }
+    async fn send(&mut self, address: &str, message: ServerMessage) -> Result<(), Error> {
+        match self.connections.get_mut(address) {
+            Some(h) => {
+                h.send(message).await?;
+            }
+            None => {
+                warn!("Could not send to unkwown connection: {}", address);
+            }
+        }
+        Ok(())
     }
 
     // The boolean means should execution continue or not
@@ -254,7 +267,7 @@ impl Server {
                 self.address_manager
                     .no_response(crate::data::intern_messages::Peer::from(address));
                 if self.connection_count < 10 {
-                    self.find_new_peer()
+                    self.find_new_peer().await;
                 }
             }
             ConnectionMessageContent::Quit => {
@@ -283,7 +296,7 @@ impl Server {
                         .send(ServerMessage::Terminate(Error::ServerTermination))
                         .await
                     {
-                        warn!("Could not shutdown connection")
+                        warn!("Could not shutdown connection: {:?}", e)
                     }
                 }
                 info!("Reseting connection state");
@@ -294,7 +307,10 @@ impl Server {
             ConnectionMessageContent::RetrieveAddr => {
                 if let Source::Connection(conn) = message.source {
                     let (t, v) = self.address_manager.get_addr().raw_bytes();
-                    self.send(conn.tcp_address, ServerMessage::SendMessage(t, v));
+                    match self.connections.get_mut(&conn.tcp_address) {
+                        Some(h) => h.send(ServerMessage::SendMessage(t, v)).await?,
+                        None => warn!("Could not send to {}: unknown connection", conn.tcp_address),
+                    }
                 }
             }
             ConnectionMessageContent::NewAddr(addr) => {
@@ -319,7 +335,7 @@ impl Server {
             ConnectionMessageContent::VerifiedAddr(address) => {
                 self.address_manager.add_addr(address)
             }
-            ConnectionMessageContent::Register(sender, host) => {
+            ConnectionMessageContent::Register(mut sender, host) => {
                 if self.connection_count < self.max_connections_count {
                     info!("Registered [{}]", &host.tcp_address);
                     if self.sync_counter > 0 {
@@ -330,8 +346,8 @@ impl Server {
                         let getmempool = ensicoin_messages::message::GetMempool {};
                         let (t, v) = getmempool.raw_bytes();
                         let msg_get_mempool = ServerMessage::SendMessage(t, v);
-                        self.send(host.tcp_address.clone(), msg);
-                        self.send(host.tcp_address.clone(), msg_get_mempool);
+                        self.send(&host.tcp_address, msg).await?;
+                        self.send(&host.tcp_address, msg_get_mempool).await?;
                     };
                     self.connections.insert(host.tcp_address, sender);
                     self.address_manager.register_addr(host.peer, true);
@@ -348,7 +364,7 @@ impl Server {
                     self.connection_count -= 1;
                 };
                 if self.connection_count < 10 {
-                    self.find_new_peer()
+                    self.find_new_peer().await;
                 }
                 trace!("Cleaned connection [{}]", host.tcp_address);
             }
@@ -360,7 +376,7 @@ impl Server {
                     }
                 };
                 if self.connections.contains_key(&host) {
-                    self.send(host, ServerMessage::Terminate(e));
+                    self.send(&host, ServerMessage::Terminate(e)).await?;
                 }
             }
             ConnectionMessageContent::CheckInv(inv) => {
@@ -376,7 +392,8 @@ impl Server {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
                         let (t, v) = get_data.raw_bytes();
-                        self.send(remote.tcp_address, ServerMessage::SendMessage(t, v));
+                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
+                            .await?;
                     }
                 };
             }
@@ -387,12 +404,14 @@ impl Server {
                         self.blockchain.lock().await.get_data(get_data.inventory)?;
                     for block in blocks {
                         let (t, v) = block.raw_bytes();
-                        self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
+                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
+                            .await?;
                     }
                     let (txs, _) = self.mempool.lock().await.get_data(remaining);
                     for tx in txs {
                         let (t, v) = tx.raw_bytes();
-                        self.send(remote.tcp_address.clone(), ServerMessage::SendMessage(t, v));
+                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
+                            .await?;
                     }
                 }
             }
@@ -403,7 +422,8 @@ impl Server {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
                         let (t, v) = inv.raw_bytes();
-                        self.send(remote.tcp_address, ServerMessage::SendMessage(t, v));
+                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
+                            .await?;
                     }
                 }
             }
@@ -415,11 +435,13 @@ impl Server {
                 };
                 let peer = crate::data::intern_messages::Peer { ip, port };
                 self.address_manager.register_addr(peer, true);
-                Connection::initiate(
+                if let Err(e) = Connection::initiate(
                     std::net::SocketAddr::from((ip, port)),
                     self.connection_sender.clone(),
                     self.origin_port,
-                );
+                ).await {
+                    warn!("Could ont initiate connection to {}: {:?}",std::net::SocketAddr::from((ip, port)), e);
+                };
             }
             ConnectionMessageContent::NewTransaction(tx) => {
                 // TODO: Verify tx in mempool insert
@@ -428,14 +450,12 @@ impl Server {
                 self.mempool.lock().await.insert(ltx);
             }
             ConnectionMessageContent::NewBlock(block) => {
-                self.handle_new_block(block, message.source)?;
+                self.handle_new_block(block, message.source).await?;
             }
             ConnectionMessageContent::NewConnection(socket) => {
                 if self.connection_count < self.max_connections_count {
-                    let new_conn =
-                        Connection::new(socket, self.connection_sender.clone(), self.origin_port);
                     trace!("new connection");
-                    tokio::spawn(new_conn.run());
+                    Connection::accept(socket, self.connection_sender.clone(), self.origin_port);
                 }
             }
         }
@@ -443,10 +463,12 @@ impl Server {
     }
 
     // TODO: Be a good peer finder
-    fn find_new_peer(&mut self) {
+    async fn find_new_peer(&mut self) {
         for peer in self.address_manager.get_some_peers(10_usize) {
             let address = std::net::SocketAddr::from((peer.ip, peer.port));
-            Connection::initiate(address, self.connection_sender.clone(), self.origin_port);
+            if let Err(e) = Connection::initiate(address.clone(), self.connection_sender.clone(), self.origin_port).await {
+                warn!("New peer {} errored: {:?}", address, e);
+            }
         }
     }
 
@@ -454,132 +476,152 @@ impl Server {
         &mut self,
         block: ensicoin_messages::resource::Block,
         source: crate::data::intern_messages::Source,
-    ) -> Result<(), Error> {
-        info!("Handling block of height: {}", block.header.height);
-        let mut lblock = LinkedBlock::new(block);
-        let hash = lblock.header.double_hash();
-        self.utxo_manager.link_block(&mut lblock);
-        let new_target = self
-            .blockchain
-            .read()
-            .get_target_next_block(lblock.header.timestamp)?;
-        debug!(
-            "Validating block {}",
-            ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-        );
-        let prev_block = match self
-            .blockchain
-            .read()
-            .get_block(&lblock.header.prev_block)?
-        {
-            Some(b) => b,
-            None => {
-                warn!(
-                    "Orphan block: {}",
-                    ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-                );
-                self.orphan_manager.add_block((source, lblock.into_block()));
-                return Ok(());
-            }
-        };
-        if lblock.is_valid(new_target, prev_block.header.height) {
-            let (t, v) = ensicoin_messages::message::Inv {
-                inventory: vec![ensicoin_messages::message::InvVect {
-                    hash: lblock.header.double_hash(),
-                    data_type: ensicoin_messages::message::ResourceType::Block,
-                }],
-            }
-            .raw_bytes();
-            self.broadcast_to_connections(ServerMessage::SendMessage(t, v));
-            let addition = self.blockchain.write().new_block(lblock.clone())?;
-            match addition {
-                NewAddition::Fork => {
-                    info!("Handling fork");
-                    self.utxo_manager.register_block(&lblock)?;
-                    self.mempool.write().remove_tx(&lblock);
-                    let best_block = self.blockchain.read().best_block_hash()?;
-                    let common_hash =
-                        match self.blockchain.read().find_common_hash(best_block, hash)? {
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), Error>> + Send + '_>> {
+        async move {
+            info!("Handling block of height: {}", block.header.height);
+            let mut lblock = LinkedBlock::new(block);
+            let hash = lblock.header.double_hash();
+            self.utxo_manager.link_block(&mut lblock);
+            let new_target = self
+                .blockchain
+                .lock()
+                .await
+                .get_target_next_block(lblock.header.timestamp)?;
+            debug!(
+                "Validating block {}",
+                ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+            );
+            let prev_block = match self
+                .blockchain
+                .lock()
+                .await
+                .get_block(&lblock.header.prev_block)?
+            {
+                Some(b) => b,
+                None => {
+                    warn!(
+                        "Orphan block: {}",
+                        ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                    );
+                    self.orphan_manager.add_block((source, lblock.into_block()));
+                    return Ok(());
+                }
+            };
+            if lblock.is_valid(new_target, prev_block.header.height) {
+                let (t, v) = ensicoin_messages::message::Inv {
+                    inventory: vec![ensicoin_messages::message::InvVect {
+                        hash: lblock.header.double_hash(),
+                        data_type: ensicoin_messages::message::ResourceType::Block,
+                    }],
+                }
+                .raw_bytes();
+                self.broadcast_to_connections(ServerMessage::SendMessage(t, v)).await?;
+                let addition = self.blockchain.lock().await.new_block(lblock.clone())?;
+                match addition {
+                    NewAddition::Fork => {
+                        info!("Handling fork");
+                        self.utxo_manager.register_block(&lblock)?;
+                        self.mempool.lock().await.remove_tx(&lblock);
+                        let best_block = self.blockchain.lock().await.best_block_hash()?;
+                        let common_hash = match self
+                            .blockchain
+                            .lock()
+                            .await
+                            .find_common_hash(best_block, hash)?
+                        {
                             Some(h) => h,
                             None => return Err(Error::NotFound("merge point".to_string())),
                         };
-                    let new_branch = self.blockchain.read().chain_until(&hash, &common_hash)?;
-                    let pop_contex = self.blockchain.write().pop_until(&common_hash)?;
-                    for utxo in pop_contex.utxo_to_remove {
-                        self.utxo_manager.delete(&utxo)?;
-                    }
-                    self.utxo_manager.restore(pop_contex.utxo_to_restore)?;
-                    for tx in pop_contex.txs_to_restore {
-                        let mut ltx = LinkedTransaction::new(tx);
-                        self.utxo_manager.link(&mut ltx);
-                        self.mempool.write().insert(ltx);
-                    }
-                    let block_chain = self.blockchain.read().chain_to_blocks(new_branch)?;
-                    let mut linked_chain: Vec<_> =
-                        block_chain.into_iter().map(LinkedBlock::new).collect();
-                    linked_chain
-                        .iter_mut()
-                        .for_each(|mut lb| self.utxo_manager.link_block(&mut lb));
-                    for lb in &linked_chain {
-                        self.utxo_manager.register_block(lb)?;
-                    }
-                    self.blockchain.write().add_chain(linked_chain)?;
-                    trace!(
-                        "New best block after fork: {}",
-                        ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-                    );
-                    #[cfg(feature = "grpc")]
-                    {
-                        if self
-                            .broadcast_channel
-                            .write()
-                            .try_broadcast(BroadcastMessage::BestBlock(
-                                self.blockchain
-                                    .read()
-                                    .get_block(&self.blockchain.read().best_block_hash()?)?
-                                    .unwrap(),
-                            ))
-                            .is_err()
+                        let new_branch = self
+                            .blockchain
+                            .lock()
+                            .await
+                            .chain_until(&hash, &common_hash)?;
+                        let pop_contex = self.blockchain.lock().await.pop_until(&common_hash)?;
+                        for utxo in pop_contex.utxo_to_remove {
+                            self.utxo_manager.delete(&utxo)?;
+                        }
+                        self.utxo_manager.restore(pop_contex.utxo_to_restore)?;
+                        for tx in pop_contex.txs_to_restore {
+                            let mut ltx = LinkedTransaction::new(tx);
+                            self.utxo_manager.link(&mut ltx);
+                            self.mempool.lock().await.insert(ltx);
+                        }
+                        let block_chain =
+                            self.blockchain.lock().await.chain_to_blocks(new_branch)?;
+                        let mut linked_chain: Vec<_> =
+                            block_chain.into_iter().map(LinkedBlock::new).collect();
+                        linked_chain
+                            .iter_mut()
+                            .for_each(|mut lb| self.utxo_manager.link_block(&mut lb));
+                        for lb in &linked_chain {
+                            self.utxo_manager.register_block(lb)?;
+                        }
+                        self.blockchain.lock().await.add_chain(linked_chain)?;
+                        trace!(
+                            "New best block after fork: {}",
+                            ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                        );
+                        #[cfg(feature = "grpc")]
                         {
-                            error!("Could not broadcast");
+                            if self
+                                .broadcast_channel_tx
+                                .send(BroadcastMessage::BestBlock(
+                                    self.blockchain
+                                        .lock()
+                                        .await
+                                        .get_block(
+                                            &self.blockchain.lock().await.best_block_hash()?,
+                                        )?
+                                        .unwrap(),
+                                ))
+                                .await
+                                .is_err()
+                            {
+                                error!("Could not broadcast");
+                            }
                         }
                     }
-                }
-                NewAddition::BestBlock => {
-                    trace!(
-                        "New best block: {}",
-                        ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
-                    );
-                    self.utxo_manager.register_block(&lblock)?;
-                    #[cfg(feature = "grpc")]
-                    {
-                        if self
-                            .broadcast_channel
-                            .write()
-                            .try_broadcast(BroadcastMessage::BestBlock(
-                                self.blockchain
-                                    .read()
-                                    .get_block(&self.blockchain.read().best_block_hash()?)?
-                                    .unwrap(),
-                            ))
-                            .is_err()
+                    NewAddition::BestBlock => {
+                        trace!(
+                            "New best block: {}",
+                            ensicoin_serializer::hash_to_string(&lblock.header.double_hash())
+                        );
+                        self.utxo_manager.register_block(&lblock)?;
+                        #[cfg(feature = "grpc")]
                         {
-                            error!("Could not broadcast");
+                            if self
+                                .broadcast_channel_tx
+                                .send(BroadcastMessage::BestBlock(
+                                    self.blockchain
+                                        .lock()
+                                        .await
+                                        .get_block(
+                                            &self.blockchain.lock().await.best_block_hash()?,
+                                        )?
+                                        .unwrap(),
+                                ))
+                                .await
+                                .is_err()
+                            {
+                                error!("Could not broadcast");
+                            }
                         }
                     }
+                    NewAddition::Nothing => {
+                        info!("Added block to a sidechain");
+                    }
                 }
-                NewAddition::Nothing => {
-                    info!("Added block to a sidechain");
-                }
+            } else {
+                warn!("Recieved invalid Block from {}", source);
             }
-        } else {
-            warn!("Recieved invalid Block from {}", source);
+            let best_block_hash = self.blockchain.lock().await.best_block_hash()?;
+            let orphan_chain = self.orphan_manager.retrieve_chain(best_block_hash);
+            for (s, b) in orphan_chain {
+                self.handle_new_block(b, s).await?;
+            }
+            Ok(())
         }
-        let best_block_hash = self.blockchain.read().best_block_hash()?;
-        let orphan_chain = self.orphan_manager.retrieve_chain(best_block_hash);
-        for (s, b) in orphan_chain {
-            self.handle_new_block(b, s)?;
-        }
-        Ok(())
+        .boxed()
     }
 }

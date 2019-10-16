@@ -111,7 +111,6 @@ pub enum ConnectionMessageContent {
 /// Messages Sent From the server
 #[derive(Debug)]
 pub enum ServerMessage {
-    Tick,
     Terminate(Error),
     SendMessage(MessageType, Bytes),
     HandleMessage(MessageType, BytesMut),
@@ -120,7 +119,6 @@ pub enum ServerMessage {
 impl Clone for ServerMessage {
     fn clone(&self) -> Self {
         match self {
-            ServerMessage::Tick => ServerMessage::Tick,
             ServerMessage::Terminate(_) => ServerMessage::Terminate(Error::ServerTermination),
             ServerMessage::SendMessage(t, a) => ServerMessage::SendMessage(t.clone(), a.clone()),
             ServerMessage::HandleMessage(t, a) => {
