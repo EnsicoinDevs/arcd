@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package ensicoin_listener;
+
+message Outpoint {
+  bytes hash = 1;
+  uint32 index = 2;
+}
+
+message TxInput {
+  Outpoint previous_output = 1;
+  bytes script = 2;
+}
+
+message TxOutput {
+  uint64 value = 1;
+  bytes script = 2;
+}
+
+message Tx {
+  uint32 version = 1;
+  repeated string flags = 2;
+  repeated TxInput inputs = 3;
+  repeated TxOutput outputs = 4;
+  bytes hash = 5;
+}
+
+message ListenForAddressReceivingReqest {
+  bytes address = 1;
+}
+
+message ListenForAddressReceivingReply {
+  Tx tx = 1;
+}
+
+service Listener {
+  rpc ListenForAddressReceiving(ListenForAddressReceivingRequest)
+      returns (stream ListenForAddressReceivingReply) {}
+}

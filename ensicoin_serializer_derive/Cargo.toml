@@ -1,0 +1,21 @@
+[package]
+name = "ensicoin_serializer_derive"
+version = "0.2.5"
+authors = ["Quentin Boyer <qbsecond@gmail.com>"]
+edition = "2018"
+
+description = "Derive macros for ensicoin_serializer"
+license = " GPL-3.0-or-later"
+
+repository = "https://github.com/EnsicoinDevs/ensicoin_serializer"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "1.0.5"
+quote = "1.0.2"
+
+[dev-dependencies]
+ensicoin_serializer = "2.0.6"
+bytes = "0.4.12"

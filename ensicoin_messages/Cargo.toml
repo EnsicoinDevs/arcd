@@ -1,0 +1,18 @@
+[package]
+name = "ensicoin_messages"
+version = "1.0.0"
+authors = ["Quentin Boyer <qbsecond@gmail.com>"]
+edition = "2018"
+
+description = "Data types used in the ensicoin protocol"
+license = "MIT"
+repository = "https://github.com/EnsicoinDevs/ensicoin-message"
+
+[dependencies]
+ensicoin_serializer = "2.0.8"
+ensicoin_serializer_derive = "0.2.7"
+bytes = "0.4.12"
+generic-array = "0.13.2"
+sha2 = "0.8.0"
+log = "0.4.8"
+

@@ -14,3 +14,8 @@ This is a daemon launched with `another-rust-coin`, you can see all availaible o
 
 On its own it can't do very much, you can pair this with a cli like [arc-cli](https://github.com/EnsicoinDevs/arc-cli) to manage the daemon while it runs.
 
+
+## License
+
+The node `arcd` is GPL.
+The libs `ensicoin_serializer`, `ensicoin_serializer_derive` and `ensicoin_messages` are MIT.

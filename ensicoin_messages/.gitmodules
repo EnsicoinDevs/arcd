@@ -1,0 +1,3 @@
+[submodule "ensicoin-proto"]
+	path = ensicoin-proto
+	url = https://github.com/EnsicoinDevs/ensicoin-proto

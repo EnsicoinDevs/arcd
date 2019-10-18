@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package ensicoin_rpc;
+
+message Address {
+  string ip = 1;
+  uint32 port = 2;
+}
+
+message Peer {
+  Address address = 1;
+}
+
+message Outpoint {
+  bytes hash = 1;
+  uint32 index = 2;
+}
+
+message TxInput {
+  Outpoint previous_output = 1;
+  bytes script = 2;
+}
+
+message TxOutput {
+  uint64 value = 1;
+  bytes script = 2;
+}
+
+message Tx {
+  uint32 version = 1;
+  repeated string flags = 2;
+  repeated TxInput inputs = 3;
+  repeated TxOutput outputs = 4;
+  bytes hash = 5;
+}
+
+message BlockHeader {
+  bytes hash = 1;
+  uint32 version = 2;
+  repeated string flags = 3;
+  bytes prev_block = 4;
+  bytes merkle_root = 5;
+  uint64 timestamp = 6;
+  uint32 height = 7;
+  bytes target = 8;
+  uint64 nonce = 10;
+}
+message Block {
+  BlockHeader header = 11;
+  repeated Tx txs = 9;
+}
+
+message BlockTemplate {
+  uint32 version = 1;
+  repeated string flags = 2;
+  bytes prev_block = 3;
+  uint64 timestamp = 4;
+  uint32 height = 5;
+  bytes target = 6;
+}
+
+enum Error { INVALID_DATA = 0; }
+
+message Reply {
+  Error error = 1;
+}
+
+message GetInfoRequest {}
+message GetInfoReply {
+  string implementation = 1;
+  uint32 protocol_version = 2;
+  bytes best_block_hash = 3;
+  bytes genesis_block_hash = 4;
+}
+
+message PublishRawTxRequest {
+  bytes raw_tx = 1;
+}
+message PublishRawTxReply {}
+
+message PublishRawBlockRequest {
+  bytes raw_block = 1;
+}
+message PublishRawBlockReply {}
+
+message GetBlockTemplateRequest {}
+message GetBlockTemplateReply {
+  BlockTemplate block_template = 1;
+  repeated Tx txs = 2;
+}
+
+message GetBlockByHashRequest {
+  bytes hash = 1;
+}
+message GetBlockByHashReply {
+  Block block = 1;
+  bool main_chain = 2;
+}
+
+message GetTxByHashRequest {
+  bytes hash = 1;
+}
+message GetTxByHashReply {
+  Tx tx = 1;
+}
+
+message ConnectPeerRequest {
+  Peer peer = 1;
+}
+message ConnectPeerReply {}
+
+message DisconnectPeerRequest {
+  Peer peer = 1;
+}
+message DisconnectPeerReply {}
+
+message GetBestBlocksRequest {}
+message GetBestBlocksReply {
+  bytes hash = 1;
+}
+
+message GetNewTxRequest {}
+message GetNewTxReply {
+  Tx tx = 1;
+}
+
+message GetBlockHeaderByHashRequest{
+  bytes hash = 1;
+}
+message GetBlockHeaderByHashReply {
+  BlockHeader header = 1;
+  bool main_chain = 2;
+}
+
+service Node {
+  rpc GetInfo(GetInfoRequest) returns (GetInfoReply) {}
+  rpc PublishRawTx(PublishRawTxRequest) returns (PublishRawTxReply) {}
+  rpc PublishRawBlock(PublishRawBlockRequest) returns (PublishRawBlockReply) {}
+  rpc GetBlockTemplate(GetBlockTemplateRequest)
+      returns (stream GetBlockTemplateReply) {}
+  rpc GetBlockByHash(GetBlockByHashRequest) returns (GetBlockByHashReply) {}
+  rpc GetBlockHeaderByHash(GetBlockHeaderByHashRequest) returns (GetBlockHeaderByHashReply) {}
+  rpc GetTxByHash(GetTxByHashRequest) returns (GetTxByHashReply) {}
+  rpc ConnectPeer(ConnectPeerRequest) returns (ConnectPeerReply) {}
+  rpc DisconnectPeer(DisconnectPeerRequest) returns (DisconnectPeerReply) {}
+  rpc GetBestBlocks(GetBestBlocksRequest) returns (stream GetBestBlocksReply) {}
+  rpc GetNewTx(GetNewTxRequest) returns (stream GetNewTxReply) {}
+}
