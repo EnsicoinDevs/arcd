@@ -18,7 +18,7 @@ use crate::{
         linkedtx::LinkedTransaction,
     },
     manager::{AddressManager, Blockchain, Mempool, NewAddition, OrphanBlockManager, UtxoManager},
-    network::Connection,
+    network::{Connection, TerminationReason},
     Error, ServerConfig,
 };
 #[cfg(feature = "grpc")]
@@ -95,7 +95,8 @@ impl Server {
         });
         let mut sender_clone = sender.clone();
         tokio::spawn(async move {
-            let mut ctrl_c = tokio::net::signal::ctrl_c().expect("Could not register signal handler");
+            let mut ctrl_c =
+                tokio::net::signal::ctrl_c().expect("Could not register signal handler");
             ctrl_c.next().await;
             sender_clone
                 .send(ConnectionMessage {
@@ -293,7 +294,7 @@ impl Server {
                 info!("Disconnecting Peers");
                 for conn_sender in self.connections.values_mut() {
                     if let Err(e) = conn_sender
-                        .send(ServerMessage::Terminate(Error::ServerTermination))
+                        .send(ServerMessage::Terminate(TerminationReason::Quit))
                         .await
                     {
                         warn!("Could not shutdown connection: {:?}", e)
@@ -306,15 +307,15 @@ impl Server {
             }
             ConnectionMessageContent::RetrieveAddr => {
                 if let Source::Connection(conn) = message.source {
-                    let (t, v) = self.address_manager.get_addr().raw_bytes();
+                    let m = Message::Addr(self.address_manager.get_addr());
                     match self.connections.get_mut(&conn.tcp_address) {
-                        Some(h) => h.send(ServerMessage::SendMessage(t, v)).await?,
+                        Some(h) => h.send(ServerMessage::SendMsg(m)).await?,
                         None => warn!("Could not send to {}: unknown connection", conn.tcp_address),
                     }
                 }
             }
             ConnectionMessageContent::NewAddr(addr) => {
-                for address in addr.addresses {
+                for address in addr {
                     match tokio::net::TcpStream::connect((
                         std::net::IpAddr::from(address.ip),
                         address.port,
@@ -340,12 +341,10 @@ impl Server {
                     info!("Registered [{}]", &host.tcp_address);
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
-                        let getblocks = self.blockchain.lock().await.generate_get_blocks()?;
-                        let (t, v) = getblocks.raw_bytes();
-                        let msg = ServerMessage::SendMessage(t, v);
-                        let getmempool = ensicoin_messages::message::GetMempool {};
-                        let (t, v) = getmempool.raw_bytes();
-                        let msg_get_mempool = ServerMessage::SendMessage(t, v);
+                        let getblocks =
+                            Message::GetBlocks(self.blockchain.lock().await.generate_get_blocks()?);
+                        let msg = ServerMessage::SendMsg(getblocks);
+                        let msg_get_mempool = ServerMessage::SendMsg(Message::GetMempool);
                         self.send(&host.tcp_address, msg).await?;
                         self.send(&host.tcp_address, msg_get_mempool).await?;
                     };
@@ -355,7 +354,9 @@ impl Server {
                 } else {
                     warn!("Too many connections to accept [{}]", &host.tcp_address);
                     sender
-                        .send(ServerMessage::Terminate(Error::ServerTermination))
+                        .send(ServerMessage::Terminate(
+                            TerminationReason::TooManyConnections,
+                        ))
                         .await?;
                 }
             }
@@ -376,23 +377,22 @@ impl Server {
                     }
                 };
                 if self.connections.contains_key(&host) {
-                    self.send(&host, ServerMessage::Terminate(e)).await?;
+                    self.send(
+                        &host,
+                        ServerMessage::Terminate(TerminationReason::RequestedTermination),
+                    )
+                    .await?;
                 }
             }
             ConnectionMessageContent::CheckInv(inv) => {
-                let (mut unknown, txs) = self
-                    .blockchain
-                    .lock()
-                    .await
-                    .get_unknown_blocks(inv.inventory)?;
+                let (mut unknown, txs) = self.blockchain.lock().await.get_unknown_blocks(inv)?;
                 let (mut unknown_tx, _) = self.mempool.lock().await.get_unknown_tx(txs);
                 unknown.append(&mut unknown_tx);
-                let get_data = ensicoin_messages::message::GetData { inventory: unknown };
-                if !get_data.inventory.is_empty() {
+                if !unknown.is_empty() {
+                    let get_data = Message::GetData(unknown);
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
-                        let (t, v) = get_data.raw_bytes();
-                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
+                        self.send(&remote.tcp_address, ServerMessage::SendMsg(get_data))
                             .await?;
                     }
                 };
@@ -400,17 +400,17 @@ impl Server {
             ConnectionMessageContent::Retrieve(get_data) => {
                 // GetData
                 if let crate::data::intern_messages::Source::Connection(remote) = message.source {
-                    let (blocks, remaining) =
-                        self.blockchain.lock().await.get_data(get_data.inventory)?;
+                    let (blocks, remaining) = self.blockchain.lock().await.get_data(get_data)?;
                     for block in blocks {
-                        let (t, v) = block.raw_bytes();
-                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
-                            .await?;
+                        self.send(
+                            &remote.tcp_address,
+                            ServerMessage::SendMsg(Message::Block(block)),
+                        )
+                        .await?;
                     }
                     let (txs, _) = self.mempool.lock().await.get_data(remaining);
                     for tx in txs {
-                        let (t, v) = tx.raw_bytes();
-                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
+                        self.send(&remote.tcp_address, ServerMessage::SendMsg(Message::Tx(tx)))
                             .await?;
                     }
                 }
@@ -418,12 +418,14 @@ impl Server {
             ConnectionMessageContent::SyncBlocks(get_blocks) => {
                 // Handling: Best Block
                 let inv = self.blockchain.lock().await.generate_inv(&get_blocks)?;
-                if !inv.inventory.is_empty() {
+                if !inv.is_empty() {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
-                        let (t, v) = inv.raw_bytes();
-                        self.send(&remote.tcp_address, ServerMessage::SendMessage(t, v))
-                            .await?;
+                        self.send(
+                            &remote.tcp_address,
+                            ServerMessage::SendMsg(Message::Inv(inv)),
+                        )
+                        .await?;
                     }
                 }
             }
@@ -439,8 +441,14 @@ impl Server {
                     std::net::SocketAddr::from((ip, port)),
                     self.connection_sender.clone(),
                     self.origin_port,
-                ).await {
-                    warn!("Could ont initiate connection to {}: {:?}",std::net::SocketAddr::from((ip, port)), e);
+                )
+                .await
+                {
+                    warn!(
+                        "Could ont initiate connection to {}: {:?}",
+                        std::net::SocketAddr::from((ip, port)),
+                        e
+                    );
                 };
             }
             ConnectionMessageContent::NewTransaction(tx) => {
@@ -466,7 +474,13 @@ impl Server {
     async fn find_new_peer(&mut self) {
         for peer in self.address_manager.get_some_peers(10_usize) {
             let address = std::net::SocketAddr::from((peer.ip, peer.port));
-            if let Err(e) = Connection::initiate(address.clone(), self.connection_sender.clone(), self.origin_port).await {
+            if let Err(e) = Connection::initiate(
+                address.clone(),
+                self.connection_sender.clone(),
+                self.origin_port,
+            )
+            .await
+            {
                 warn!("New peer {} errored: {:?}", address, e);
             }
         }
@@ -508,14 +522,12 @@ impl Server {
                 }
             };
             if lblock.is_valid(new_target, prev_block.header.height) {
-                let (t, v) = ensicoin_messages::message::Inv {
-                    inventory: vec![ensicoin_messages::message::InvVect {
-                        hash: lblock.header.double_hash(),
-                        data_type: ensicoin_messages::message::ResourceType::Block,
-                    }],
-                }
-                .raw_bytes();
-                self.broadcast_to_connections(ServerMessage::SendMessage(t, v)).await?;
+                let inv = vec![ensicoin_messages::message::InvVect {
+                    hash: lblock.header.double_hash(),
+                    data_type: ensicoin_messages::message::ResourceType::Block,
+                }];
+                self.broadcast_to_connections(ServerMessage::SendMsg(Message::Inv(inv)))
+                    .await?;
                 let addition = self.blockchain.lock().await.new_block(lblock.clone())?;
                 match addition {
                     NewAddition::Fork => {

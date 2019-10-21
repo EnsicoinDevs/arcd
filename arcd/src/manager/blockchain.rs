@@ -251,10 +251,8 @@ impl Blockchain {
     pub fn generate_inv(
         &self,
         get_blocks: &ensicoin_messages::message::GetBlocks,
-    ) -> Result<ensicoin_messages::message::Inv, Error> {
-        let inv = ensicoin_messages::message::Inv {
-            inventory: Vec::new(),
-        };
+    ) -> Result<Vec<ensicoin_messages::message::InvVect>, Error> {
+        let inv = Vec::new();
         let last_common_block = match self.find_last_common_block(&get_blocks.block_locator)? {
             Some(h) => h,
             None => return Ok(inv),
@@ -267,15 +265,13 @@ impl Blockchain {
             return Ok(inv);
         };
         let chain = self.chain_until(&uptil, &last_common_block)?;
-        Ok(ensicoin_messages::message::Inv {
-            inventory: chain
-                .into_iter()
-                .map(|hash| ensicoin_messages::message::InvVect {
-                    data_type: ensicoin_messages::message::ResourceType::Block,
-                    hash,
-                })
-                .collect(),
-        })
+        Ok(chain
+            .into_iter()
+            .map(|hash| ensicoin_messages::message::InvVect {
+                data_type: ensicoin_messages::message::ResourceType::Block,
+                hash,
+            })
+            .collect())
     }
 
     pub fn find_common_hash(

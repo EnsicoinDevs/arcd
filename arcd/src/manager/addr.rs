@@ -1,5 +1,5 @@
 use crate::data::intern_messages::{Peer, Source};
-use ensicoin_messages::message::{Addr, Address};
+use ensicoin_messages::message::Address;
 use ensicoin_serializer::{Deserialize, Serialize};
 use rand::seq::IteratorRandom;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -135,7 +135,7 @@ impl AddressManager {
             .map_err(AddressManagerError::DbError)
     }
 
-    pub fn get_addr(&self) -> Addr {
+    pub fn get_addr(&self) -> Vec<Address> {
         let mut addresses = Vec::new();
         let now = SystemTime::now();
         let since_epoch = now
@@ -172,7 +172,7 @@ impl AddressManager {
                 Err(e) => warn!("Error reading addr from db: {}", e),
             }
         }
-        Addr { addresses }
+        addresses
     }
 
     fn retime_addr(&self, peer: Peer) {

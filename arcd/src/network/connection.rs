@@ -1,25 +1,25 @@
 use tokio::{net::TcpStream, prelude::*, sync::mpsc};
 
-use ensicoin_serializer::{Deserialize, Deserializer};
-
-use bytes::{Bytes, BytesMut};
-
 use crate::{
     data::{
         intern_messages::{self, ConnectionMessage, ConnectionMessageContent, ServerMessage},
-        MessageCodec,
+        MessageCodec, MessageCodecError,
     },
     network::create_self_address,
     Error,
 };
-use ensicoin_messages::{
-    message::{self, Addr, GetBlocks, GetData, Inv, Message, MessageType, Ping, Whoami, WhoamiAck},
-    resource::Transaction,
-};
+use ensicoin_messages::message::{Message, MessageType, Whoami};
 
 type ConnectionSender = mpsc::Sender<ConnectionMessage>;
 
 const CHANNEL_CAPACITY: usize = 2_048;
+
+#[derive(Clone, Copy, Debug)]
+pub enum TerminationReason {
+    RequestedTermination,
+    TooManyConnections,
+    Quit,
+}
 
 #[derive(Debug)]
 pub enum CreationError {
@@ -27,8 +27,42 @@ pub enum CreationError {
     IoError(tokio::io::Error),
     TimedOut,
 }
+#[derive(Debug)]
+pub enum ConnectionError {
+    TerminatedByServer {
+        reason: TerminationReason,
+    },
+    IoError(tokio::io::Error),
+    InvalidState {
+        message_type: MessageType,
+        state: State,
+    },
+    SendToServer,
+    RecvFromServer,
+    InvalidMessage(MessageCodecError),
+}
+impl From<tokio::io::Error> for ConnectionError {
+    fn from(err: tokio::io::Error) -> Self {
+        Self::IoError(err)
+    }
+}
+impl From<mpsc::error::RecvError> for ConnectionError {
+    fn from(_: mpsc::error::RecvError) -> Self {
+        Self::RecvFromServer
+    }
+}
+impl From<mpsc::error::SendError> for ConnectionError {
+    fn from(_: mpsc::error::SendError) -> Self {
+        Self::SendToServer
+    }
+}
+impl From<MessageCodecError> for ConnectionError {
+    fn from(err: MessageCodecError) -> Self {
+        Self::InvalidMessage(err)
+    }
+}
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum State {
     Initiated,
     Replied,
@@ -97,9 +131,9 @@ impl Connection {
         let remote = stream.peer_addr().unwrap().to_string();
         info!("connected to [{}]", remote);
         let mut conn = Connection::new(stream, sender, origin_port);
-        let (t, v) = Whoami::new(create_self_address(origin_port)).raw_bytes();
+        let msg = Message::Whoami(Whoami::new(create_self_address(origin_port)));
         conn.state = State::Initiated;
-        if let Err(e) = conn.frame.send(v).await {
+        if let Err(e) = conn.frame.send(msg).await {
             warn!("Could not create connection: {:?}", e);
             return Err(CreationError::HandshakeError);
         };
@@ -113,27 +147,13 @@ impl Connection {
     async fn run(self) {
         let timer = tokio::timer::Interval::new_interval(std::time::Duration::from_secs(42));
         // TODO !
-    }
-
-    async fn handle_server_message(&mut self, msg: ServerMessage) -> Result<(), Error> {
-        match msg {
+        /*match msg {
             ServerMessage::Terminate(e) => {
                 info!("Terminate for {:?}", e);
-                return Err(Error::ServerTermination)
+                self.terminate(e)?;
             }
-            ServerMessage::SendMessage(t, v) => self.send(t, v).await?,
-            ServerMessage::HandleMessage(t, v) => {
-                match t {
-                    ensicoin_messages::message::MessageType::Ping
-                    | ensicoin_messages::message::MessageType::Pong => {
-                        trace!("{} from [{}]", t, self.remote())
-                    }
-                    _ => info!("{} from [{}]", t, self.remote()),
-                };
-                self.handle_message(t, v).await?;
-            }
-        }
-        Ok(())
+            ServerMessage::SendMsg(m) => self.send(m).await?,
+        }*/
     }
 
     async fn send_message(
@@ -156,18 +176,22 @@ impl Connection {
         &self.remote
     }
 
-    pub async fn send(&mut self, t: MessageType, v: Bytes) -> Result<(), Error> {
+    pub async fn send(&mut self, msg: Message) -> Result<(), ConnectionError> {
+        let t = msg.message_type();
         if self.state == State::Ack || t == MessageType::Whoami || t == MessageType::WhoamiAck {
             match t {
                 MessageType::Ping | MessageType::Pong => {
-                    debug!("buffering {} for [{}]", t, self.remote())
+                    debug!("Sending {} to [{}]", t, self.remote())
                 }
-                _ => info!("buffering {} for [{}]", t, self.remote()),
+                _ => info!("Sending {} to [{}]", t, self.remote()),
             };
-            self.frame.send(v).await?;
+            self.frame.send(msg).await?;
             Ok(())
         } else {
-            Err(Error::InvalidConnectionState(format!("{}", self.state)))
+            Err(ConnectionError::InvalidState {
+                state: self.state,
+                message_type: t,
+            })
         }
     }
 
@@ -185,26 +209,24 @@ impl Connection {
         }
     }
 
-    async fn handle_message(&mut self, t: MessageType, v: BytesMut) -> Result<(), Error> {
-        let mut de = Deserializer::new(v);
-        match t {
-            MessageType::Whoami if self.state == State::Idle => {
-                let (t, v) = Whoami::new(create_self_address(self.origin_port)).raw_bytes();
-                self.send(t, v).await?;
+    async fn handle_message(&mut self, msg: Message) -> Result<(), ConnectionError> {
+        match msg {
+            Message::Whoami(remote_id) if self.state == State::Idle => {
+                let resp = Message::Whoami(Whoami::new(create_self_address(self.origin_port)));
+                self.send(resp).await?;
 
-                let (t, v) = WhoamiAck::new().raw_bytes();
-                self.send(t, v).await?;
+                let ack = Message::WhoamiAck;
+                self.send(ack).await?;
 
-                let remote_id = Whoami::deserialize(&mut de)?;
                 self.identity.peer.ip = remote_id.address.ip;
                 self.identity.peer.port = remote_id.address.port;
                 self.version = std::cmp::min(self.version, remote_id.version);
                 self.state = State::Confirm;
             }
-            MessageType::Whoami if self.state == State::Initiated => {
+            Message::Whoami(_) if self.state == State::Initiated => {
                 self.state = State::Replied;
             }
-            MessageType::WhoamiAck if self.state == State::Confirm => {
+            Message::WhoamiAck if self.state == State::Confirm => {
                 self.state = State::Ack;
                 self.send_message(ConnectionMessageContent::Register(
                     self.server_sender.clone(),
@@ -212,74 +234,58 @@ impl Connection {
                 ))
                 .await?;
             }
-            MessageType::WhoamiAck if self.state == State::Replied => {
+            Message::WhoamiAck if self.state == State::Replied => {
                 self.state = State::Ack;
                 self.send_message(ConnectionMessageContent::Register(
                     self.server_sender.clone(),
                     self.identity.clone(),
                 ))
                 .await?;
-                let (t, v) = WhoamiAck::new().raw_bytes();
-                self.send(t, v).await?;
+                self.send(Message::WhoamiAck).await?;
             }
-            MessageType::Whoami => {
+            Message::Whoami(_) => {
                 warn!("[{}] is not in a state accepting whoami", self.remote());
             }
-            MessageType::WhoamiAck => {
+            Message::WhoamiAck => {
                 warn!("[{}] is not in a state accepting whoamiack", self.remote());
             }
-            MessageType::Inv => {
-                self.send_message(ConnectionMessageContent::CheckInv(Inv::deserialize(
-                    &mut de,
-                )?))
-                .await?;
+            Message::Inv(inv) => {
+                self.send_message(ConnectionMessageContent::CheckInv(inv))
+                    .await?;
             }
-            MessageType::GetData => {
-                self.send_message(ConnectionMessageContent::Retrieve(GetData::deserialize(
-                    &mut de,
-                )?)).await?;
+            Message::GetData(get_data) => {
+                self.send_message(ConnectionMessageContent::Retrieve(get_data))
+                    .await?;
             }
-            MessageType::NotFound => (),
-            MessageType::Block => {
-                self.send_message(ConnectionMessageContent::NewBlock(
-                    ensicoin_messages::resource::Block::deserialize(&mut de)?,
-                ))
-                .await?
+            Message::NotFound(_) => (),
+            Message::Block(block) => {
+                self.send_message(ConnectionMessageContent::NewBlock(block))
+                    .await?
             }
-            MessageType::GetBlocks => {
-                self.send_message(ConnectionMessageContent::SyncBlocks(
-                    GetBlocks::deserialize(&mut de)?,
-                ))
-                .await?;
+            Message::GetBlocks(get_blocks) => {
+                self.send_message(ConnectionMessageContent::SyncBlocks(get_blocks))
+                    .await?;
             }
             // TODO: getMempool
-            MessageType::GetMempool => (),
-            MessageType::Transaction => {
-                self.send_message(ConnectionMessageContent::NewTransaction(
-                    Transaction::deserialize(&mut de)?,
-                ))
-                .await?
+            Message::GetMempool => (),
+            Message::Tx(tx) => {
+                self.send_message(ConnectionMessageContent::NewTransaction(tx))
+                    .await?
             }
 
-            MessageType::Unknown(_) => {
-                warn!("unknown message type ({}) from [{}]", t, self.remote());
+            Message::Ping => {
+                self.send(Message::Pong).await?;
             }
-            MessageType::Ping => {
-                let (t, v) = message::Pong::new().raw_bytes();
-                self.send(t, v).await?;
-            }
-            MessageType::Pong => {
+            Message::Pong => {
                 self.waiting_ping = false;
             }
-            MessageType::GetAddr => {
+            Message::GetAddr => {
                 self.send_message(ConnectionMessageContent::RetrieveAddr)
                     .await?;
             }
-            MessageType::Addr => {
-                self.send_message(ConnectionMessageContent::NewAddr(Addr::deserialize(
-                    &mut de,
-                )?))
-                .await?
+            Message::Addr(addrs) => {
+                self.send_message(ConnectionMessageContent::NewAddr(addrs))
+                    .await?
             }
         };
         Ok(())

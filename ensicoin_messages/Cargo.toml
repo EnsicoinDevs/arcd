@@ -9,10 +9,10 @@ license = "MIT"
 repository = "https://github.com/EnsicoinDevs/ensicoin-message"
 
 [dependencies]
-ensicoin_serializer = "2.0.8"
-ensicoin_serializer_derive = "0.2.7"
+ensicoin_serializer = { path = "../ensicoin_serializer" }
+ensicoin_serializer_derive = { path = "../ensicoin_serializer_derive" }
 bytes = "0.4.12"
-generic-array = "0.13.2"
+generic-array = "0.12.3"
 sha2 = "0.8.0"
 log = "0.4.8"
 

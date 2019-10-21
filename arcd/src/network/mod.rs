@@ -3,6 +3,7 @@ mod connection;
 mod rpc_server;
 mod server;
 
+pub use connection::TerminationReason;
 pub use connection::{Connection, State as ConnectionState};
 #[cfg(feature = "grpc")]
 pub use rpc_server::{node, RPCNode};

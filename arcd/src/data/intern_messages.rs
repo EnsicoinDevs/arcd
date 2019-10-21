@@ -1,7 +1,7 @@
 use crate::Error;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use ensicoin_messages::{
-    message::{GetBlocks, GetData, Inv, MessageType},
+    message::{Address, GetBlocks, InvVect, Message},
     resource::{Block, Transaction},
 };
 use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
@@ -93,8 +93,8 @@ pub struct ConnectionMessage {
 pub enum ConnectionMessageContent {
     Disconnect(Error, String),
     Clean(RemoteIdentity),
-    CheckInv(Inv),
-    Retrieve(GetData),
+    CheckInv(Vec<InvVect>),
+    Retrieve(Vec<InvVect>),
     SyncBlocks(GetBlocks),
     NewTransaction(Transaction),
     NewBlock(Block),
@@ -103,29 +103,16 @@ pub enum ConnectionMessageContent {
     Register(mpsc::Sender<ServerMessage>, RemoteIdentity),
     RetrieveAddr,
     ConnectionFailed(std::net::SocketAddr),
-    NewAddr(ensicoin_messages::message::Addr),
-    VerifiedAddr(ensicoin_messages::message::Address),
+    NewAddr(Vec<Address>),
+    VerifiedAddr(Address),
     Quit,
 }
 
 /// Messages Sent From the server
-#[derive(Debug)]
+#[derive(Clone)]
 pub enum ServerMessage {
-    Terminate(Error),
-    SendMessage(MessageType, Bytes),
-    HandleMessage(MessageType, BytesMut),
-}
-
-impl Clone for ServerMessage {
-    fn clone(&self) -> Self {
-        match self {
-            ServerMessage::Terminate(_) => ServerMessage::Terminate(Error::ServerTermination),
-            ServerMessage::SendMessage(t, a) => ServerMessage::SendMessage(t.clone(), a.clone()),
-            ServerMessage::HandleMessage(t, a) => {
-                ServerMessage::HandleMessage(t.clone(), a.clone())
-            }
-        }
-    }
+    Terminate(crate::network::TerminationReason),
+    SendMsg(Message),
 }
 
 impl std::fmt::Display for ConnectionMessage {

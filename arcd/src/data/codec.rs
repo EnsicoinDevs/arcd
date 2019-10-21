@@ -1,56 +1,59 @@
-use bytes::{Bytes, BytesMut};
-use ensicoin_messages::message::MessageType;
-use ensicoin_serializer::{Deserialize, Deserializer};
+use bytes::BytesMut;
+use ensicoin_messages::message::{Message, MessageError, MessageHeader};
 use tokio::codec::{Decoder, Encoder};
 
+#[derive(Debug)]
+pub enum MessageCodecError {
+    IoError(tokio::io::Error),
+    InvalidMessage(MessageError),
+}
+impl From<MessageError> for MessageCodecError {
+    fn from(err: MessageError) -> Self {
+        Self::InvalidMessage(err)
+    }
+}
+impl From<tokio::io::Error> for MessageCodecError {
+    fn from(err: tokio::io::Error) -> Self {
+        Self::IoError(err)
+    }
+}
+
 pub struct MessageCodec {
-    decoding_payload: bool,
-    message_type: MessageType,
-    payload_size: usize,
+    header: Option<MessageHeader>,
 }
 
 impl MessageCodec {
     pub fn new() -> MessageCodec {
-        MessageCodec {
-            decoding_payload: false,
-            message_type: MessageType::Unknown(Vec::new()),
-            payload_size: 0,
-        }
+        MessageCodec { header: None }
     }
 }
 
 impl Decoder for MessageCodec {
-    type Item = (MessageType, BytesMut);
-    type Error = crate::Error;
+    type Item = Message;
+    type Error = MessageCodecError;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if !self.decoding_payload && buf.len() >= 24 {
+        if self.header.is_none() && buf.len() >= 24 {
             trace!("Reading header");
             let header = buf.split_to(24);
-            let mut de = Deserializer::new(header);
+            let header = MessageHeader::from_bytes(crate::constants::MAGIC, header)?;
 
-            let magic = u32::deserialize(&mut de).unwrap_or(0);
-            if magic != crate::constants::MAGIC {
-                return Err(crate::Error::InvalidMagic(magic));
-            };
-            let message_type = MessageType::deserialize(&mut de).unwrap();
-            let payload_length = u64::deserialize(&mut de).unwrap_or(0) as usize;
-            self.decoding_payload = true;
-            self.message_type = message_type;
-            self.payload_size = payload_length;
             trace!(
                 "message: {} of size {} to read",
-                self.message_type,
-                self.payload_size
+                header.message_type,
+                header.payload_length
             );
+            self.header = Some(header);
         }
-        if self.decoding_payload && buf.len() >= self.payload_size {
-            trace!("Reading payload");
-            self.decoding_payload = false;
-            Ok(Some((
-                self.message_type.clone(),
-                buf.split_to(self.payload_size),
-            )))
+        if let Some(header) = self.header.take() {
+            if buf.len() >= header.payload_length as usize {
+                trace!("Reading payload");
+                let length = header.payload_length as usize;
+                Ok(Some(Message::from_payload(header, buf.split_to(length))?))
+            } else {
+                self.header = Some(header);
+                Ok(None)
+            }
         } else {
             Ok(None)
         }
@@ -58,11 +61,11 @@ impl Decoder for MessageCodec {
 }
 
 impl Encoder for MessageCodec {
-    type Item = Bytes;
-    type Error = crate::Error;
+    type Item = Message;
+    type Error = MessageCodecError;
 
-    fn encode(&mut self, raw_message: Self::Item, buf: &mut BytesMut) -> Result<(), crate::Error> {
-        buf.extend_from_slice(&raw_message);
+    fn encode(&mut self, message: Message, buf: &mut BytesMut) -> Result<(), Self::Error> {
+        buf.extend_from_slice(&message.as_bytes(crate::constants::MAGIC));
         Ok(())
     }
 }

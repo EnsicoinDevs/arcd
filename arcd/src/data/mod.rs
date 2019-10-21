@@ -6,5 +6,5 @@ pub mod script_vm;
 mod utxo;
 pub mod validation;
 
-pub use codec::MessageCodec;
+pub use codec::{MessageCodec, MessageCodecError};
 pub use utxo::{PairedUtxo, UtxoData};
