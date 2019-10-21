@@ -6,7 +6,7 @@ Implementation in Rust of the ensicoin
 
 This implementation uses [tokio](https://tokio.rs/) to run the server. It uses [tonic](https://github.com/hyperium/tonic) as a RPC server.
 
-The common ensicoin data types are defined in [ensicoin-messages](ensicoin-message) and serialization/deserialization in [ensicoin-serializer](ensicoin-serializer).
+The common ensicoin data types are defined in [ensicoin_messages](ensicoin_messages) and serialization/deserialization in [ensicoin_serializer](ensicoin_serializer).
 
 ## Usage
 
