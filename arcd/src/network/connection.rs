@@ -1,5 +1,3 @@
-use tokio::{net::TcpStream, prelude::*, sync::mpsc};
-
 use crate::{
     data::{
         intern_messages::{self, ConnectionMessage, ConnectionMessageContent, ServerMessage},
@@ -9,6 +7,8 @@ use crate::{
     Error,
 };
 use ensicoin_messages::message::{Message, MessageType, Whoami};
+use futures::future::{self, Either, Future, FutureExt};
+use tokio::{net::TcpStream, prelude::*, sync::mpsc};
 
 type ConnectionSender = mpsc::Sender<ConnectionMessage>;
 
@@ -18,7 +18,9 @@ const CHANNEL_CAPACITY: usize = 2_048;
 pub enum TerminationReason {
     RequestedTermination,
     TooManyConnections,
+    RemoteTerminated,
     Quit,
+    PingFailed,
 }
 
 #[derive(Debug)]
@@ -144,16 +146,72 @@ impl Connection {
         let connection = Connection::new(stream, sender, origin_port);
         tokio::spawn(connection.run());
     }
-    async fn run(self) {
-        let timer = tokio::timer::Interval::new_interval(std::time::Duration::from_secs(42));
+    async fn run(mut self) {
+        enum Action {
+            Server(ServerMessage),
+            Remote(Option<Result<Message, MessageCodecError>>),
+            Tick,
+        }
+        let mut timer = tokio::timer::Interval::new_interval(std::time::Duration::from_secs(42));
         // TODO !
-        /*match msg {
-            ServerMessage::Terminate(e) => {
-                info!("Terminate for {:?}", e);
-                self.terminate(e)?;
-            }
-            ServerMessage::SendMsg(m) => self.send(m).await?,
-        }*/
+        loop {
+            let server_message_fut = Box::pin(self.reciever.recv());
+            let frame_message_fut = Box::pin(self.frame.next());
+            let action = match future::select(
+                server_message_fut,
+                Box::pin(future::select(Box::pin(timer.next()), frame_message_fut)),
+            )
+            .await
+            {
+                Either::Left((server_message, _)) => match server_message {
+                    Some(msg) => Action::Server(msg),
+                    None => {
+                        warn!(
+                            "[{}] No more server messages, did the server crash ?",
+                            self.remote
+                        );
+                        return;
+                    }
+                },
+                Either::Right((Either::Left((tick, _)), _)) => Action::Tick,
+                Either::Right((Either::Right((remote_message, _)), _)) => {
+                    Action::Remote(remote_message)
+                }
+            };
+            match action {
+                Action::Server(ServerMessage::Terminate(e)) => {
+                    info!("Terminating for {:?}", e);
+                    self.terminate(e).await;
+                    return;
+                }
+                Action::Server(ServerMessage::SendMsg(m)) => {
+                    if let Err(e) = self.send(m).await {
+                        warn!("Could not send message: {:?}", e);
+                    }
+                }
+                Action::Tick => {
+                    if self.waiting_ping {
+                        self.terminate(TerminationReason::PingFailed).await;
+                        return;
+                    } else {
+                        self.waiting_ping = true;
+                    }
+                }
+                Action::Remote(None) => {
+                    self.terminate(TerminationReason::RemoteTerminated).await;
+                    return;
+                }
+                Action::Remote(Some(Err(e))) => {
+                    warn!("Message error: {:?}", e);
+                    continue;
+                }
+                Action::Remote(Some(Ok(message))) => {
+                    if let Err(e) = self.handle_message(message).await {
+                        warn!("Error handling message: {:?}", e)
+                    }
+                }
+            };
+        }
     }
 
     async fn send_message(
@@ -195,8 +253,8 @@ impl Connection {
         }
     }
 
-    async fn terminate(&mut self, error: Error) {
-        warn!("connection [{}] terminated: {}", self.remote(), error);
+    async fn terminate(&mut self, reason: TerminationReason) {
+        warn!("connection [{}] terminated: {:?}", self.remote(), reason);
         if let Err(e) = self
             .connection_sender
             .send(ConnectionMessage {
