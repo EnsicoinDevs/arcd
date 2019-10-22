@@ -174,6 +174,7 @@ impl Server {
             let addr = format!("{}:{}", "[::1]", config.grpc_port).parse().unwrap();
             let rpc_server = tonic::transport::Server::builder()
                 .serve(addr, super::node::server::NodeServer::new(rpc));
+            debug!("Created RPC server");
             match futures::future::select(Box::pin(server.main_loop()), Box::pin(rpc_server)).await
             {
                 futures::future::Either::Left((res, _)) => res.unwrap(),

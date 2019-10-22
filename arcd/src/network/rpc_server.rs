@@ -23,14 +23,13 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, watch, Mutex};
 use tonic::{Request, Response, Status};
 
-
 fn internal<T, E: std::fmt::Debug>(res: Result<T, E>) -> Result<T, Status> {
     match res {
         Err(e) => {
             warn!("Internal error: {:?}", e);
             Err(Status::new(tonic::Code::Internal, ""))
         }
-        Ok(v) => Ok(v)
+        Ok(v) => Ok(v),
     }
 }
 
@@ -150,19 +149,22 @@ type Reply<T> = Result<Response<T>, Status>;
 #[tonic::async_trait]
 impl node::server::Node for RPCNode {
     async fn get_info(&self, _request: Request<GetInfoRequest>) -> Reply<GetInfoReply> {
-        trace!("[grpc] GetInfo");
+        debug!("[grpc] GetInfo");
+        let best_block_hash = match self.blockchain.lock().await.best_block_hash() {
+            Ok(a) => a.to_vec(),
+            Err(_) => Vec::new(),
+        };
+        let genesis_block_hash = match self.blockchain.lock().await.genesis_hash() {
+            Ok(h) => h.to_vec(),
+            Err(_) => Vec::new(),
+        };
         let response = Response::new(GetInfoReply {
             implementation: IMPLEMENTATION.to_string(),
             protocol_version: VERSION,
-            best_block_hash: match self.blockchain.lock().await.best_block_hash() {
-                Ok(a) => a.to_vec(),
-                Err(_) => Vec::new(),
-            },
-            genesis_block_hash: match self.blockchain.lock().await.genesis_hash() {
-                Ok(h) => h.to_vec(),
-                Err(_) => Vec::new(),
-            },
+            best_block_hash,
+            genesis_block_hash,
         });
+
         Ok(response)
     }
 
@@ -184,12 +186,15 @@ impl node::server::Node for RPCNode {
                 ));
             }
         };
-        internal(self.server_sender.clone()
-            .send(ConnectionMessage {
-                content: ConnectionMessageContent::NewTransaction(tx),
-                source: Source::RPC,
-            })
-            .await)?;
+        internal(
+            self.server_sender
+                .clone()
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::NewTransaction(tx),
+                    source: Source::RPC,
+                })
+                .await,
+        )?;
         Ok(Response::new(PublishRawTxReply {}))
     }
 
@@ -211,12 +216,15 @@ impl node::server::Node for RPCNode {
                 ));
             }
         };
-        internal(self.server_sender.clone()
-            .send(ConnectionMessage {
-                content: ConnectionMessageContent::NewBlock(block),
-                source: Source::RPC,
-            })
-            .await)?;
+        internal(
+            self.server_sender
+                .clone()
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::NewBlock(block),
+                    source: Source::RPC,
+                })
+                .await,
+        )?;
         Ok(Response::new(PublishRawBlockReply {}))
     }
 
@@ -280,7 +288,8 @@ impl node::server::Node for RPCNode {
                     _ => unreachable!(),
                 };
                 let (txs, block_template) =
-                    RPCNode::produce_block_template(mempool.clone(), blockchain.clone(), &block).await;
+                    RPCNode::produce_block_template(mempool.clone(), blockchain.clone(), &block)
+                        .await;
                 out_tx
                     .send(Ok(GetBlockTemplateReply {
                         txs,
@@ -323,12 +332,15 @@ impl node::server::Node for RPCNode {
             }
         };
         info!("[grpc] Connect to: {}", &address);
-        internal(self.server_sender.clone()
-            .send(ConnectionMessage {
-                content: ConnectionMessageContent::Connect(address),
-                source: Source::RPC,
-            })
-            .await)?;
+        internal(
+            self.server_sender
+                .clone()
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::Connect(address),
+                    source: Source::RPC,
+                })
+                .await,
+        )?;
         Ok(tonic::Response::new(ConnectPeerReply {}))
     }
     async fn disconnect_peer(
@@ -364,10 +376,18 @@ impl node::server::Node for RPCNode {
             }
         };
         info!("[grpc] Disconnect from: {}", &address);
-        internal(self.server_sender.clone().send(ConnectionMessage {
-            content: ConnectionMessageContent::Disconnect(crate::Error::ServerTermination, address),
-            source: Source::RPC,
-        }).await)?;
+        internal(
+            self.server_sender
+                .clone()
+                .send(ConnectionMessage {
+                    content: ConnectionMessageContent::Disconnect(
+                        crate::Error::ServerTermination,
+                        address,
+                    ),
+                    source: Source::RPC,
+                })
+                .await,
+        )?;
         Ok(tonic::Response::new(DisconnectPeerReply {}))
     }
 
