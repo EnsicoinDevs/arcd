@@ -22,6 +22,8 @@ use crate::{
     Error, ServerConfig,
 };
 #[cfg(feature = "grpc")]
+use futures::future::{AbortHandle, Abortable, Aborted, TryFutureExt};
+#[cfg(feature = "grpc")]
 use std::sync::Arc;
 #[cfg(feature = "grpc")]
 use tokio::sync::Mutex;
@@ -31,6 +33,8 @@ const CHANNEL_CAPACITY: usize = 2_048;
 pub struct Server {
     #[cfg(feature = "grpc")]
     broadcast_channel_tx: watch::Sender<BroadcastMessage>,
+    #[cfg(feature = "grpc")]
+    rpc_abort: futures::future::AbortHandle,
 
     connection_receiver: mpsc::Receiver<ConnectionMessage>,
     connection_sender: mpsc::Sender<ConnectionMessage>,
@@ -108,35 +112,68 @@ impl Server {
         });
 
         let address_manager = AddressManager::new(config.data_dir.as_ref().unwrap(), 4)?;
+        let mempool = Mempool::new();
         let blockchain = Blockchain::new(&config.data_dir.as_ref().unwrap());
+        #[cfg(feature = "grpc")]
+        let blockchain = Arc::new(Mutex::new(blockchain));
+        #[cfg(feature = "grpc")]
+        let mempool = Arc::new(Mutex::new(mempool));
 
         #[cfg(feature = "grpc")]
         let (broadcast_channel_tx, broadcast_channel_rx) = {
-            let best_block_hash = blockchain.best_block_hash().expect("Blockchain error");
+            let best_block_hash = blockchain
+                .lock()
+                .await
+                .best_block_hash()
+                .expect("Blockchain error");
             let best_block = blockchain
+                .lock()
+                .await
                 .get_block(&best_block_hash)
                 .expect("Blockchain error");
             watch::channel(BroadcastMessage::BestBlock(best_block.unwrap()))
+        };
+        #[cfg(feature = "grpc")]
+        let rpc_abort = {
+            let rpc = RPCNode::new(
+                broadcast_channel_rx,
+                mempool.clone(),
+                blockchain.clone(),
+                sender.clone(),
+            );
+            let addr = format!("{}:{}", "[::1]", config.grpc_port).parse().unwrap();
+            let (handle, registration) = AbortHandle::new_pair();
+            let rpc_server = Abortable::new(
+                tonic::transport::Server::builder()
+                    .serve(addr, super::node::server::NodeServer::new(rpc)),
+                registration,
+            )
+            .map_err(|_| ())
+            .map(|e| match e {
+                Ok(_) => (),
+                Err(e) => {
+                    warn!("RPC server errored: {:?}", e);
+                }
+            });
+            tokio::spawn(rpc_server);
+            debug!("Created RPC server");
+            handle
         };
 
         #[allow(unused_mut)]
         let mut server = Server {
             #[cfg(feature = "grpc")]
             broadcast_channel_tx,
+            #[cfg(feature = "grpc")]
+            rpc_abort,
             connections: std::collections::HashMap::new(),
             connection_receiver: receiver,
             connection_sender: sender,
             connection_count: 0,
             max_connections_count: config.max_connections,
             utxo_manager: UtxoManager::new(config.data_dir.as_ref().unwrap()),
-            #[cfg(feature = "grpc")]
-            blockchain: Arc::new(Mutex::new(blockchain)),
-            #[cfg(not(feature = "grpc"))]
             blockchain,
-            #[cfg(feature = "grpc")]
-            mempool: Arc::new(Mutex::new(Mempool::new())),
-            #[cfg(not(feature = "grpc"))]
-            mempool: Mempool::new(),
+            mempool,
             sync_counter: 3,
             orphan_manager: OrphanBlockManager::new(),
             #[cfg(feature = "matrix_discover")]
@@ -163,26 +200,12 @@ impl Server {
             server.address_manager.len()
         ));
         info!("{}", discover_message);
-        #[cfg(feature = "grpc")]
-        {
-            let rpc = RPCNode::new(
-                broadcast_channel_rx,
-                server.mempool.clone(),
-                server.blockchain.clone(),
-                server.connection_sender.clone(),
-            );
-            let addr = format!("{}:{}", "[::1]", config.grpc_port).parse().unwrap();
-            let rpc_server = tonic::transport::Server::builder()
-                .serve(addr, super::node::server::NodeServer::new(rpc));
-            debug!("Created RPC server");
-            match futures::future::select(Box::pin(server.main_loop()), Box::pin(rpc_server)).await
-            {
-                futures::future::Either::Left((res, _)) => res.unwrap(),
-                futures::future::Either::Right((res, _)) => res.unwrap(),
-            };
+        if let Err(e) = server.main_loop().await {
+            match e {
+                Error::Quit => (),
+                _ => error!("Server failed: {:?}", e),
+            }
         }
-        #[cfg(not(feature = "grpc"))]
-        server.main_loop().await?;
         Ok(())
     }
 
@@ -291,6 +314,7 @@ impl Server {
                     {
                         error!("Cannot stop RPC server")
                     }
+                    self.rpc_abort.abort();
                 }
                 info!("Disconnecting Peers");
                 for conn_sender in self.connections.values_mut() {
@@ -304,7 +328,7 @@ impl Server {
                 info!("Reseting connection state");
                 self.address_manager.reset_state();
                 info!("Node shutdown !");
-                return Ok(false);
+                return Err(Error::Quit);
             }
             ConnectionMessageContent::RetrieveAddr => {
                 if let Source::Connection(conn) = message.source {

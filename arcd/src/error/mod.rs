@@ -15,6 +15,7 @@ pub enum Error {
     InvalidBlock,
     NotFound(String),
     SignalError,
+    Quit,
 }
 
 impl std::fmt::Display for Error {
@@ -35,6 +36,7 @@ impl std::fmt::Display for Error {
             Error::DatabaseError(e) => write!(f, "Database error: {}", e),
             Error::InvalidBlock => write!(f, "Invalid Block"),
             Error::SignalError => write!(f, "Signal Error"),
+            Error::Quit => write!(f, "Quit"),
         }
     }
 }
