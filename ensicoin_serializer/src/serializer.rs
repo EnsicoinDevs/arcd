@@ -3,6 +3,30 @@ use super::types::VarUint;
 use bytes::Bytes;
 use std::net::SocketAddr;
 
+use cookie_factory::SerializeFn;
+use cookie_factory::{
+    bytes::{be_u16, be_u32, be_u64, be_u8},
+    combinator::cond,
+    sequence::tuple,
+};
+use std::io::Write;
+
+pub fn fn_varuint<'c, W: Write + 'c>(value: VarUint) -> impl SerializeFn<W> + 'c {
+    let val = value.value;
+    tuple((
+        cond(val <= 252, be_u8(val as u8)),
+        cond(
+            253 <= val && val <= 0xFFFF,
+            tuple((be_u8(0xFD), be_u16(val as u16))),
+        ),
+        cond(
+            0x10000 <= val && val <= 0xFFFFFFFF,
+            tuple((be_u8(0xFE), be_u32(val as u32))),
+        ),
+        cond(0x100000000 <= val, tuple((be_u8(0xFF), be_u64(val)))),
+    ))
+}
+
 /// Trait used to serialize a type to a bytes array
 pub trait Serialize {
     fn serialize(&self) -> Bytes;
@@ -133,6 +157,16 @@ mod tests {
     fn serialize_varuint() {
         let var_uint = VarUint { value: 756980522 };
         assert_eq!(vec![0xFE, 45, 30, 155, 42], var_uint.serialize());
+    }
+
+    #[test]
+    fn serialize_cf_varuint() {
+        let var_uint = VarUint { value: 756980522 };
+        let mut buf = [0u8; 5];
+        let (_, pos) =
+            cookie_factory::gen(crate::serializer::fn_varuint(var_uint), &mut buf[..]).unwrap();
+        assert_eq!(pos, 5);
+        assert_eq!(buf, [0xFE, 45, 30, 155, 42]);
     }
 
     #[test]
