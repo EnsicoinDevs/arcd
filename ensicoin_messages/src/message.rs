@@ -143,8 +143,8 @@ pub enum Message {
     NotFound(Vec<InvVect>),
     Ping,
     Pong,
-    Block(Block),
-    Tx(Transaction),
+    Block(Box<Block>),
+    Tx(Box<Transaction>),
 }
 
 #[derive(Deserialize, Clone)]
@@ -202,8 +202,8 @@ impl Message {
             MessageType::Inv => Message::Inv(Vec::deserialize(&mut de)?),
             MessageType::GetData => Message::GetData(Vec::deserialize(&mut de)?),
             MessageType::NotFound => Message::NotFound(Vec::deserialize(&mut de)?),
-            MessageType::Block => Message::Block(Block::deserialize(&mut de)?),
-            MessageType::Transaction => Message::Tx(Transaction::deserialize(&mut de)?),
+            MessageType::Block => Message::Block(Box::new(Block::deserialize(&mut de)?)),
+            MessageType::Transaction => Message::Tx(Box::new(Transaction::deserialize(&mut de)?)),
             MessageType::Unknown(v) => return Err(MessageError::UnknownType(v)),
         })
     }

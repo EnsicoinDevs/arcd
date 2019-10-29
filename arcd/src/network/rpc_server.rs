@@ -190,7 +190,7 @@ impl node::server::Node for RPCNode {
             self.server_sender
                 .clone()
                 .send(ConnectionMessage {
-                    content: ConnectionMessageContent::NewTransaction(tx),
+                    content: ConnectionMessageContent::NewTransaction(Box::new(tx)),
                     source: Source::RPC,
                 })
                 .await,
@@ -220,7 +220,7 @@ impl node::server::Node for RPCNode {
             self.server_sender
                 .clone()
                 .send(ConnectionMessage {
-                    content: ConnectionMessageContent::NewBlock(block),
+                    content: ConnectionMessageContent::NewBlock(Box::new(block)),
                     source: Source::RPC,
                 })
                 .await,

@@ -82,6 +82,7 @@ impl std::fmt::Display for State {
 type FramedStream = tokio::codec::Framed<tokio::net::TcpStream, MessageCodec>;
 
 pub struct Connection {
+    id: u64,
     state: State,
     connection_sender: mpsc::Sender<ConnectionMessage>,
     server_sender: mpsc::Sender<ServerMessage>,
@@ -95,14 +96,15 @@ pub struct Connection {
 }
 
 impl Connection {
-    fn new(stream: TcpStream, sender: ConnectionSender, origin_port: u16) -> Connection {
+    fn new(stream: TcpStream, sender: ConnectionSender, origin_port: u16, id: u64) -> Connection {
         let (sender_to_connection, reciever) = mpsc::channel(CHANNEL_CAPACITY);
         let remote = stream.peer_addr().unwrap().to_string();
         let frame = tokio::codec::Framed::new(stream, MessageCodec::new());
 
         let mut identity = crate::data::intern_messages::RemoteIdentity::default();
-        identity.tcp_address = remote.clone();
+        identity.id = id;
         Connection {
+            id,
             state: State::Idle,
             frame,
             version: crate::constants::VERSION,
@@ -119,6 +121,7 @@ impl Connection {
         address: std::net::SocketAddr,
         sender: ConnectionSender,
         origin_port: u16,
+        id: u64,
     ) -> Result<(), CreationError> {
         let stream = match tokio::timer::Timeout::new(
             tokio::net::TcpStream::connect(&address),
@@ -132,7 +135,7 @@ impl Connection {
         };
         let remote = stream.peer_addr().unwrap().to_string();
         info!("connected to [{}]", remote);
-        let mut conn = Connection::new(stream, sender, origin_port);
+        let mut conn = Connection::new(stream, sender, origin_port, id);
         let msg = Message::Whoami(Whoami::new(create_self_address(origin_port)));
         conn.state = State::Initiated;
         if let Err(e) = conn.frame.send(msg).await {
@@ -142,8 +145,8 @@ impl Connection {
         tokio::spawn(conn.run());
         Ok(())
     }
-    pub fn accept(stream: TcpStream, sender: ConnectionSender, origin_port: u16) {
-        let connection = Connection::new(stream, sender, origin_port);
+    pub fn accept(stream: TcpStream, sender: ConnectionSender, origin_port: u16, id: u64) {
+        let connection = Connection::new(stream, sender, origin_port, id);
         tokio::spawn(connection.run());
     }
     async fn run(mut self) {
@@ -258,7 +261,7 @@ impl Connection {
         if let Err(e) = self
             .connection_sender
             .send(ConnectionMessage {
-                content: ConnectionMessageContent::Clean(self.identity.clone()),
+                content: ConnectionMessageContent::Clean(self.id),
                 source: self.source(),
             })
             .await

@@ -21,7 +21,7 @@ impl std::fmt::Display for Source {
             f,
             "{}",
             match self {
-                Source::Connection(r) => format!("connetion [{}]", r.tcp_address),
+                Source::Connection(r) => format!("connetion [{}]", r.id),
                 #[cfg(feature = "grpc")]
                 Source::RPC => "RPC".to_string(),
                 Source::Server => "Server".to_string(),
@@ -32,7 +32,7 @@ impl std::fmt::Display for Source {
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
 pub struct RemoteIdentity {
-    pub tcp_address: String,
+    pub id: u64,
     pub peer: Peer,
 }
 
@@ -92,12 +92,12 @@ pub struct ConnectionMessage {
 /// Messages sent to the server by the connections for example
 pub enum ConnectionMessageContent {
     Disconnect(Error, String),
-    Clean(RemoteIdentity),
+    Clean(u64),
     CheckInv(Vec<InvVect>),
     Retrieve(Vec<InvVect>),
     SyncBlocks(GetBlocks),
-    NewTransaction(Transaction),
-    NewBlock(Block),
+    NewTransaction(Box<Transaction>),
+    NewBlock(Box<Block>),
     Connect(std::net::SocketAddr),
     NewConnection(tokio::net::TcpStream),
     Register(mpsc::Sender<ServerMessage>, RemoteIdentity),

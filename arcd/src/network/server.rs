@@ -39,7 +39,7 @@ pub struct Server {
     connection_receiver: mpsc::Receiver<ConnectionMessage>,
     connection_sender: mpsc::Sender<ConnectionMessage>,
 
-    connections: std::collections::HashMap<String, mpsc::Sender<ServerMessage>>,
+    connections: std::collections::HashMap<u64, mpsc::Sender<ServerMessage>>,
 
     utxo_manager: UtxoManager,
     #[cfg(feature = "grpc")]
@@ -56,6 +56,8 @@ pub struct Server {
     max_connections_count: u64,
 
     sync_counter: u64,
+
+    next_id_to_give: u64,
 
     orphan_manager: OrphanBlockManager,
 
@@ -173,6 +175,7 @@ impl Server {
             max_connections_count: config.max_connections,
             utxo_manager: UtxoManager::new(config.data_dir.as_ref().unwrap()),
             blockchain,
+            next_id_to_give: 0,
             mempool,
             sync_counter: 3,
             orphan_manager: OrphanBlockManager::new(),
@@ -264,19 +267,19 @@ impl Server {
     }
 
     async fn broadcast_to_connections(&mut self, message: ServerMessage) -> Result<(), Error> {
-        let remotes: Vec<_> = self.connections.keys().cloned().collect();
+        let remotes: Vec<_> = self.connections.keys().copied().collect();
         for remote in remotes {
-            self.send(&remote, message.clone()).await?;
+            self.send(remote, message.clone()).await?;
         }
         Ok(())
     }
-    async fn send(&mut self, address: &str, message: ServerMessage) -> Result<(), Error> {
-        match self.connections.get_mut(address) {
+    async fn send(&mut self, id: u64, message: ServerMessage) -> Result<(), Error> {
+        match self.connections.get_mut(&id) {
             Some(h) => {
                 h.send(message).await?;
             }
             None => {
-                warn!("Could not send to unkwown connection: {}", address);
+                warn!("Could not send to unkwown connection: {}", id);
             }
         }
         Ok(())
@@ -331,11 +334,11 @@ impl Server {
                 return Err(Error::Quit);
             }
             ConnectionMessageContent::RetrieveAddr => {
-                if let Source::Connection(conn) = message.source {
+                if let Source::Connection(remote) = message.source {
                     let m = Message::Addr(self.address_manager.get_addr());
-                    match self.connections.get_mut(&conn.tcp_address) {
+                    match self.connections.get_mut(&remote.id) {
                         Some(h) => h.send(ServerMessage::SendMsg(m)).await?,
-                        None => warn!("Could not send to {}: unknown connection", conn.tcp_address),
+                        None => warn!("Could not send to {}: unknown connection", remote.id),
                     }
                 }
             }
@@ -363,21 +366,22 @@ impl Server {
             }
             ConnectionMessageContent::Register(mut sender, host) => {
                 if self.connection_count < self.max_connections_count {
-                    info!("Registered [{}]", &host.tcp_address);
+                    info!("Registered [{}]", &host.id);
+                    self.connections.insert(host.id, sender);
+                    self.address_manager.register_addr(host.peer, true);
+                    self.connection_count += 1;
+
                     if self.sync_counter > 0 {
                         self.sync_counter -= 1;
                         let getblocks =
                             Message::GetBlocks(self.blockchain.lock().await.generate_get_blocks()?);
                         let msg = ServerMessage::SendMsg(getblocks);
                         let msg_get_mempool = ServerMessage::SendMsg(Message::GetMempool);
-                        self.send(&host.tcp_address, msg).await?;
-                        self.send(&host.tcp_address, msg_get_mempool).await?;
+                        self.send(host.id, msg).await?;
+                        self.send(host.id, msg_get_mempool).await?;
                     };
-                    self.connections.insert(host.tcp_address, sender);
-                    self.address_manager.register_addr(host.peer, true);
-                    self.connection_count += 1;
                 } else {
-                    warn!("Too many connections to accept [{}]", &host.tcp_address);
+                    warn!("Too many connections to accept [{}]", &host.id);
                     sender
                         .send(ServerMessage::Terminate(
                             TerminationReason::TooManyConnections,
@@ -386,16 +390,16 @@ impl Server {
                 }
             }
             ConnectionMessageContent::Clean(host) => {
-                if self.connections.remove(&host.tcp_address).is_some() {
+                if self.connections.remove(&host).is_some() {
                     self.connection_count -= 1;
                 };
                 if self.connection_count < 10 {
                     self.find_new_peer().await;
                 }
-                trace!("Cleaned connection [{}]", host.tcp_address);
+                trace!("Cleaned connection [{}]", host);
             }
             ConnectionMessageContent::Disconnect(e, host) => {
-                if let Error::NoResponse = &e {
+                /*if let Error::NoResponse = &e {
                     match host.parse() {
                         Ok(p) => self.address_manager.no_response(p),
                         Err(e) => warn!("Host [{}] is not a socket addr: {:?}", host, e),
@@ -403,11 +407,12 @@ impl Server {
                 };
                 if self.connections.contains_key(&host) {
                     self.send(
-                        &host,
+                        host,
                         ServerMessage::Terminate(TerminationReason::RequestedTermination),
                     )
                     .await?;
-                }
+                }*/
+                // TODO what to doo
             }
             ConnectionMessageContent::CheckInv(inv) => {
                 let (mut unknown, txs) = self.blockchain.lock().await.get_unknown_blocks(inv)?;
@@ -417,7 +422,7 @@ impl Server {
                     let get_data = Message::GetData(unknown);
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
-                        self.send(&remote.tcp_address, ServerMessage::SendMsg(get_data))
+                        self.send(remote.id, ServerMessage::SendMsg(get_data))
                             .await?;
                     }
                 };
@@ -428,14 +433,14 @@ impl Server {
                     let (blocks, remaining) = self.blockchain.lock().await.get_data(get_data)?;
                     for block in blocks {
                         self.send(
-                            &remote.tcp_address,
-                            ServerMessage::SendMsg(Message::Block(block)),
+                            remote.id,
+                            ServerMessage::SendMsg(Message::Block(Box::new(block))),
                         )
                         .await?;
                     }
                     let (txs, _) = self.mempool.lock().await.get_data(remaining);
                     for tx in txs {
-                        self.send(&remote.tcp_address, ServerMessage::SendMsg(Message::Tx(tx)))
+                        self.send(remote.id, ServerMessage::SendMsg(Message::Tx(Box::new(tx))))
                             .await?;
                     }
                 }
@@ -446,11 +451,8 @@ impl Server {
                 if !inv.is_empty() {
                     if let crate::data::intern_messages::Source::Connection(remote) = message.source
                     {
-                        self.send(
-                            &remote.tcp_address,
-                            ServerMessage::SendMsg(Message::Inv(inv)),
-                        )
-                        .await?;
+                        self.send(remote.id, ServerMessage::SendMsg(Message::Inv(inv)))
+                            .await?;
                     }
                 }
             }
@@ -462,10 +464,13 @@ impl Server {
                 };
                 let peer = crate::data::intern_messages::Peer { ip, port };
                 self.address_manager.register_addr(peer, true);
+                let id = self.next_id_to_give;
+                self.next_id_to_give += 1;
                 if let Err(e) = Connection::initiate(
                     std::net::SocketAddr::from((ip, port)),
                     self.connection_sender.clone(),
                     self.origin_port,
+                    id,
                 )
                 .await
                 {
@@ -474,21 +479,29 @@ impl Server {
                         std::net::SocketAddr::from((ip, port)),
                         e
                     );
+                    self.next_id_to_give -= 1;
                 };
             }
             ConnectionMessageContent::NewTransaction(tx) => {
                 // TODO: Verify tx in mempool insert
-                let mut ltx = LinkedTransaction::new(tx);
+                let mut ltx = LinkedTransaction::new(*tx);
                 self.utxo_manager.link(&mut ltx);
                 self.mempool.lock().await.insert(ltx);
             }
             ConnectionMessageContent::NewBlock(block) => {
-                self.handle_new_block(block, message.source).await?;
+                self.handle_new_block(*block, message.source).await?;
             }
             ConnectionMessageContent::NewConnection(socket) => {
                 if self.connection_count < self.max_connections_count {
                     trace!("new connection");
-                    Connection::accept(socket, self.connection_sender.clone(), self.origin_port);
+                    let id = self.next_id_to_give;
+                    self.next_id_to_give += 1;
+                    Connection::accept(
+                        socket,
+                        self.connection_sender.clone(),
+                        self.origin_port,
+                        id,
+                    );
                 }
             }
         }
@@ -499,14 +512,18 @@ impl Server {
     async fn find_new_peer(&mut self) {
         for peer in self.address_manager.get_some_peers(10_usize) {
             let address = std::net::SocketAddr::from((peer.ip, peer.port));
+            let id = self.next_id_to_give;
+            self.next_id_to_give += 1;
             if let Err(e) = Connection::initiate(
                 address.clone(),
                 self.connection_sender.clone(),
                 self.origin_port,
+                id,
             )
             .await
             {
                 warn!("New peer {} errored: {:?}", address, e);
+                self.next_id_to_give -= 1;
             }
         }
     }
