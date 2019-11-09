@@ -12,7 +12,6 @@ pub use deserializer::Deserialize;
 pub use deserializer::Deserializer;
 pub use deserializer::Error;
 pub use deserializer::Result;
-pub use serializer::Serialize;
 pub use types::hash_to_string;
 pub use types::Sha256Result;
 pub use types::VarUint;
