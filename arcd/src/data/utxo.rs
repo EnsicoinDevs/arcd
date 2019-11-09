@@ -1,14 +1,25 @@
 use bytes::Bytes;
 use ensicoin_messages::resource::{
-    script::Script,
-    tx::{Outpoint, TransactionOutput},
+    script::{fn_script, Script},
+    tx::{fn_outpoint, Outpoint, TransactionOutput},
 };
-use ensicoin_serializer::{Deserialize, Serialize};
+use ensicoin_serializer::Deserialize;
 
-#[derive(Serialize, Deserialize)]
+use cookie_factory::{
+    bytes::{be_u32, be_u64, be_u8},
+    sequence::tuple,
+    SerializeFn,
+};
+use std::io::Write;
+
+#[derive(Deserialize)]
 pub struct PairedUtxo {
     pub data: UtxoData,
     pub outpoint: Outpoint,
+}
+
+pub fn ser_paired_utxo<'c, 'a: 'c, W: Write + 'c>(paired: &'a PairedUtxo) -> impl SerializeFn<W> + 'c {
+    tuple((ser_utxo_data(&paired.data), fn_outpoint(&paired.outpoint)))
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -30,14 +41,13 @@ impl UtxoData {
     }
 }
 
-impl Serialize for UtxoData {
-    fn serialize(&self) -> Bytes {
-        let mut v = self.script.serialize();
-        v.extend_from_slice(&self.value.serialize());
-        v.extend_from_slice(&self.block_height.serialize());
-        v.extend_from_slice(&(self.coin_base as u8).serialize());
-        v
-    }
+pub fn ser_utxo_data<'c, 'a: 'c, W: Write + 'c>(data: &'a UtxoData) -> impl SerializeFn<W> + 'c {
+    tuple((
+        fn_script(&data.script),
+        be_u64(data.value),
+        be_u32(data.block_height),
+        be_u8(data.coin_base as u8),
+    ))
 }
 
 impl Deserialize for UtxoData {

@@ -1,10 +1,12 @@
 use crate::Error;
 use bytes::Bytes;
+use cookie_factory::{bytes::be_u16, combinator::slice, sequence::tuple, SerializeFn};
 use ensicoin_messages::{
     message::{Address, GetBlocks, InvVect, Message},
     resource::{Block, Transaction},
 };
-use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
+use ensicoin_serializer::{Deserialize, Deserializer};
+use std::io::Write;
 use tokio::sync::mpsc;
 
 #[derive(Eq, PartialEq)]
@@ -75,13 +77,8 @@ impl Deserialize for Peer {
     }
 }
 
-impl Serialize for Peer {
-    fn serialize(&self) -> Bytes {
-        let mut buf = Bytes::new();
-        buf.extend_from_slice(&self.ip);
-        buf.extend_from_slice(&self.port.serialize());
-        buf
-    }
+pub fn fn_peer<'c, 'a: 'c, W: Write + 'c>(peer: &'a Peer) -> impl SerializeFn<W> + 'c {
+    tuple((slice(peer.ip), be_u16(peer.port)))
 }
 
 pub struct ConnectionMessage {

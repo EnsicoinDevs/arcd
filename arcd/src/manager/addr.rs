@@ -1,8 +1,11 @@
-use crate::data::intern_messages::{Peer, Source};
+use crate::data::intern_messages::{Peer, Source, fn_peer};
 use ensicoin_messages::message::Address;
-use ensicoin_serializer::{Deserialize, Serialize};
+use ensicoin_serializer::{Deserialize};
 use rand::seq::IteratorRandom;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use std::io::Write;
+use cookie_factory::{SerializeFn, bytes::{be_u8, be_u64}, sequence::tuple};
 
 #[derive(Debug)]
 pub enum AddressManagerError {
@@ -35,11 +38,19 @@ impl From<sled::Error> for AddressManagerError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, Copy)]
 struct PeerData {
     given: u8,
     not_responded: u8,
     pub timestamp: u64,
+}
+
+fn ser_peer_data<'c, W: Write + 'c>(data: PeerData) -> impl SerializeFn<W> {
+    tuple((
+        be_u8(data.given),
+        be_u8(data.not_responded),
+        be_u64(data.timestamp),
+    ))
 }
 
 pub struct AddressManager {
@@ -101,7 +112,7 @@ impl AddressManager {
                         std::net::SocketAddr::from((peer_address.ip, peer_address.port))
                     );
                     self.db
-                        .remove(peer_address.serialize().to_vec())
+                        .remove(ensicoin_messages::as_bytes(fn_peer(&peer_address)))
                         .map(|_| ())
                         .map_err(AddressManagerError::from)
                 } else {
@@ -118,7 +129,7 @@ impl AddressManager {
 
     fn get_peer(&self, peer_address: Peer) -> Result<Option<PeerData>, AddressManagerError> {
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
-            match self.db.get(peer_address.serialize().to_vec())? {
+            match self.db.get(ensicoin_messages::as_bytes(fn_peer(&peer_address)))? {
                 Some(b) => (*b).to_owned(),
                 None => return Ok(None),
             },
@@ -130,7 +141,7 @@ impl AddressManager {
 
     fn set_peer(&self, peer: Peer, data: PeerData) -> Result<(), AddressManagerError> {
         self.db
-            .insert(peer.serialize().to_vec(), data.serialize().to_vec())
+            .insert(ensicoin_messages::as_bytes(fn_peer(&peer)), ensicoin_messages::as_bytes(ser_peer_data(data)))
             .map(|_| ())
             .map_err(AddressManagerError::DbError)
     }
@@ -162,7 +173,7 @@ impl AddressManager {
                                     ip: peer.ip,
                                     port: peer.port,
                                 })
-                            } else if let Err(e) = self.db.remove(peer.serialize().to_vec()) {
+                            } else if let Err(e) = self.db.remove(ensicoin_messages::as_bytes(fn_peer(&peer))) {
                                 warn!("Could not delete value in addr db: {}", e)
                             }
                         }
@@ -259,7 +270,7 @@ impl AddressManager {
                         }
                     };
                     value.given = 0;
-                    if let Err(e) = self.db.insert(key, value.serialize().to_vec()) {
+                    if let Err(e) = self.db.insert(key, ensicoin_messages::as_bytes(ser_peer_data(value))) {
                         warn!("Error in reseting given in addr: {:?}", e)
                     };
                 }

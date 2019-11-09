@@ -1,5 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use ensicoin_serializer::serializer::{fn_list, fn_str};
+use ensicoin_serializer::serializer::{fn_list, fn_slice, fn_str};
 use ensicoin_serializer::{Deserialize, Deserializer, Sha256Result};
 
 use cookie_factory::{
@@ -10,7 +10,7 @@ use cookie_factory::{
 };
 use std::io::Write;
 
-pub use super::resource::{Block, Transaction, fn_tx, fn_block};
+pub use super::resource::{fn_block, fn_tx, Block, Transaction};
 
 #[derive(Deserialize, Clone)]
 pub struct GetBlocks {
@@ -254,63 +254,30 @@ impl Message {
             Message::Tx(_) => MessageType::Transaction,
         }
     }
-}
-
-pub fn fn_payload<'c, 'a: 'c, W: Write + 'c>(message: &'a Message) -> impl SerializeFn<W> + 'c {
-    let msg_type = message.message_type();
-    tuple((
-        cond(
-            msg_type == MessageType::Whoami,
-            fn_whoami(match message {
-                Message::Whoami(m) => m,
-                _ => unreachable!(),
-            }),
-        ),
-        cond(msg_type == MessageType::Addr, {
-            let addr = match message {
-                Message::Addr(a) => a,
-                _ => unreachable!(),
-            };
-            fn_list(addr.len() as u64, addr.iter().map(|a| fn_address(*a)))
-        }),
-        cond(msg_type == MessageType::GetBlocks, {
-            fn_getblocks(match message {
-                Message::GetBlocks(g) => g,
-                _ => unreachable!(),
-            })
-        }),
-        cond(
-            msg_type == MessageType::Inv
-                || msg_type == MessageType::GetData
-                || msg_type == MessageType::NotFound,
-            {
-                let vec = match message {
-                    Message::Inv(v) | Message::GetData(v) | Message::NotFound(v) => v,
-                    _ => unreachable!(),
-                };
-                fn_list(vec.len() as u64, vec.iter().map(fn_inv_vect))
-            },
-        ),
-        cond(msg_type == MessageType::Block, {
-            fn_block(match message {
-                Message::Block(b) => b,
-                _ => unreachable!(),
-            })
-        }),
-        cond(msg_type == MessageType::Transaction, {
-            fn_tx(match message {
-                Message::Tx(t) => t,
-                _ => unreachable!(),
-            })
-        }),
-    ))
+    fn payload(&self) -> Vec<u8> {
+        match self {
+            Message::Whoami(m) => crate::as_bytes(fn_whoami(m)),
+            Message::Addr(a) => crate::as_bytes(fn_slice(a, |a| fn_address(*a))),
+            Message::GetBlocks(g) => crate::as_bytes(fn_getblocks(g)),
+            Message::Inv(v) | Message::GetData(v) | Message::NotFound(v) => {
+                crate::as_bytes(fn_slice(v, fn_inv_vect))
+            }
+            Message::Block(b) => crate::as_bytes(fn_block(b)),
+            Message::Tx(t) => crate::as_bytes(fn_tx(t)),
+            Message::WhoamiAck
+            | Message::GetMempool
+            | Message::GetAddr
+            | Message::Ping
+            | Message::Pong => Vec::new(),
+        }
+    }
 }
 
 pub fn fn_message<'c, 'a: 'c, W: Write + 'c>(
     message: &'a Message,
     magic: u32,
 ) -> impl SerializeFn<W> + 'c {
-    let payload = cookie_factory::gen_simple(fn_payload(message), Vec::new()).expect("payload");
+    let payload = message.payload();
     tuple((
         be_u32(magic),
         fn_message_type(message.message_type()),

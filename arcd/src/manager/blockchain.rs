@@ -1,10 +1,22 @@
 use crate::{
-    data::{linkedblock::LinkedBlock, PairedUtxo},
+    data::{linkedblock::LinkedBlock, PairedUtxo, ser_paired_utxo},
     Error,
 };
+use cookie_factory::{bytes::be_u8, combinator::slice, multi::all, SerializeFn};
+use ensicoin_messages::resource::fn_block;
 use ensicoin_messages::resource::{Block, Outpoint, Transaction};
-use ensicoin_serializer::{hash_to_string, Deserialize, Serialize, Sha256Result};
+use ensicoin_serializer::{hash_to_string, serializer::fn_list, Deserialize, Sha256Result};
 use num_bigint::BigUint;
+use std::io::Write;
+
+fn ser_block(block: &Block) -> Vec<u8> {
+    ensicoin_messages::as_bytes(fn_block(block))
+}
+
+fn ser_biguint<'c, 'a: 'c, W: Write + 'c>(num: &'a BigUint) -> impl SerializeFn<W> + 'c {
+    let bytes = num.to_bytes_be();
+    fn_list(bytes.len() as u64, bytes.into_iter().map(be_u8))
+}
 
 pub struct Blockchain {
     stats: sled::Db,
@@ -152,7 +164,7 @@ impl Blockchain {
     }
 
     fn set_best_block(&mut self, hash: Sha256Result) -> Result<(), Error> {
-        self.stats.insert("best_block", hash.serialize().to_vec())?;
+        self.stats.insert("best_block", ensicoin_messages::as_bytes(slice(hash)))?;
         let mut de = ensicoin_serializer::Deserializer::new(bytes::BytesMut::from(
             match self.stats.get("10_last")? {
                 Some(b) => (*b).to_owned(),
@@ -164,7 +176,10 @@ impl Blockchain {
         if blocks.len() > 10 {
             blocks = blocks.split_off(1);
         }
-        self.stats.insert("10_last", blocks.serialize().to_vec())?;
+        self.stats.insert(
+            "10_last",
+            ensicoin_messages::as_bytes(fn_list(blocks.len() as u64, blocks.iter().map(slice))),
+        )?;
         Ok(())
     }
 
@@ -183,7 +198,10 @@ impl Blockchain {
             blocks = vec![last_block.prev_block];
             blocks.append(&mut temp);
         }
-        self.stats.insert("10_last", blocks.serialize().to_vec())?;
+        self.stats.insert(
+            "10_last",
+            ensicoin_messages::as_bytes(fn_list(blocks.len() as u64, blocks.iter().map(slice))),
+        )?;
         Ok(())
     }
 
@@ -343,10 +361,9 @@ impl Blockchain {
         Ok(
             if block.header.prev_block == best_hash || chain_work > best_work {
                 if block.header.prev_block != best_hash {
-                    self.database
-                        .insert(hash, block.into_block().serialize().to_vec())?;
+                    self.database.insert(hash, ser_block(&block.into_block()))?;
                     self.work
-                        .insert(hash, chain_work.to_bytes_be().serialize().to_vec())?;
+                        .insert(hash, ensicoin_messages::as_bytes(ser_biguint(&chain_work)))?;
                     NewAddition::Fork
                 } else {
                     self.add_block(block)?;
@@ -354,9 +371,9 @@ impl Blockchain {
                 }
             } else {
                 self.database
-                    .insert(hash, block.into_block().serialize().to_vec())?;
+                    .insert(hash, ser_block(&block.into_block()))?;
                 self.work
-                    .insert(hash, chain_work.to_bytes_be().serialize().to_vec())?;
+                    .insert(hash, ensicoin_messages::as_bytes(ser_biguint(&chain_work)))?;
                 NewAddition::Nothing
             },
         )
@@ -375,24 +392,25 @@ impl Blockchain {
             hash_to_string(&block.header.double_hash())
         );
         let chain_work = self.get_work(&block.header.prev_block)? + block.work();
-        let spent_utxo = block.spent_utxo().serialize().to_vec();
+        let spent_utxo = block.spent_utxo();
+        let spent_utxo = ensicoin_messages::as_bytes(fn_list(spent_utxo.len() as u64, spent_utxo.iter().map(ser_paired_utxo)));
         let block = block.into_block();
-        let raw_block = block.serialize().to_vec();
+        let raw_block = ser_block(&block);
         let hash = block.header.double_hash();
         if block.header.height == 2015 {
             let genesis_hash = self.genesis_hash()?;
             self.past_block
-                .insert(hash, genesis_hash.serialize().to_vec())?;
+                .insert(hash, ensicoin_messages::as_bytes(slice(genesis_hash)))?;
         } else if block.header.height >= 2016 {
             let past_of_previous = self.block_2016_before(&block.header.prev_block)?;
             let next = self.block_after(&past_of_previous)?.unwrap();
-            self.past_block.insert(hash, next.serialize().to_vec())?;
+            self.past_block.insert(hash, ensicoin_messages::as_bytes(slice(next)))?;
         };
         self.work
-            .insert(hash, chain_work.to_bytes_be().serialize().to_vec())?;
+            .insert(hash, ensicoin_messages::as_bytes(ser_biguint(&chain_work)))?;
         self.database.insert(hash, raw_block.clone())?;
         self.reverse_chain
-            .insert(block.header.prev_block, hash.serialize().to_vec())?;
+            .insert(block.header.prev_block, ensicoin_messages::as_bytes(slice(hash)))?;
         self.spent_tx.insert(hash, spent_utxo)?;
         self.set_best_block(hash)?;
         Ok(())
@@ -479,7 +497,7 @@ impl Blockchain {
         self.unset_best_block()?;
         self.stats.insert(
             "best_block",
-            best_block.header.prev_block.serialize().to_vec(),
+            ensicoin_messages::as_bytes(slice(best_block.header.prev_block)),
         )?;
         let utxo_to_restore = Vec::deserialize(&mut de)?;
         let mut utxo_to_remove = Vec::new();

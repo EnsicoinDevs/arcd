@@ -1,3 +1,5 @@
+#![type_length_limit="1546013"]
+
 mod bootstrap;
 #[allow(dead_code)]
 mod constants;

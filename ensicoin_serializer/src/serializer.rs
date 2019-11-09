@@ -10,6 +10,15 @@ use cookie_factory::{
 };
 use std::io::Write;
 
+
+pub fn fn_slice<'c, W: Write + 'c, T, F, G>(data: &'c [T], f: F) -> impl SerializeFn<W> + 'c where
+    F: FnMut(&'c T) -> G + Clone + 'c,
+    G: SerializeFn<W> + 'c
+{
+    let len = data.len() as u64;
+    fn_list(len, data.iter().map(f))
+}
+
 pub fn fn_varuint<'c, W: Write + 'c>(value: VarUint) -> impl SerializeFn<W> + 'c {
     let val = value.value;
     tuple((

@@ -18,7 +18,8 @@ use crate::{
     },
     manager::{Blockchain, Mempool},
 };
-use ensicoin_serializer::{hash_to_string, Deserialize, Deserializer, Serialize, Sha256Result};
+use ensicoin_serializer::{hash_to_string, Deserialize, Deserializer, Sha256Result};
+use ensicoin_messages::resource::script::fn_script;
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch, Mutex};
 use tonic::{Request, Response, Status};
@@ -42,7 +43,7 @@ fn tx_to_rpc(tx: ensicoin_messages::resource::Transaction) -> Tx {
             .inputs
             .into_iter()
             .map(|input| TxInput {
-                script: input.script.serialize().to_vec(),
+                script: ensicoin_messages::as_bytes(fn_script(&input.script)),
                 previous_output: Some(Outpoint {
                     hash: input.previous_output.hash.to_vec(),
                     index: input.previous_output.index,
@@ -54,7 +55,7 @@ fn tx_to_rpc(tx: ensicoin_messages::resource::Transaction) -> Tx {
             .into_iter()
             .map(|output| TxOutput {
                 value: output.value,
-                script: output.script.serialize().to_vec(),
+                script: ensicoin_messages::as_bytes(fn_script(&output.script)),
             })
             .collect(),
     }

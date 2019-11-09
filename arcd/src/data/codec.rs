@@ -1,5 +1,6 @@
+use bytes::BufMut;
 use bytes::BytesMut;
-use ensicoin_messages::message::{Message, MessageError, MessageHeader};
+use ensicoin_messages::message::{fn_message, Message, MessageError, MessageHeader};
 use tokio::codec::{Decoder, Encoder};
 
 #[derive(Debug)]
@@ -65,7 +66,10 @@ impl Encoder for MessageCodec {
     type Error = MessageCodecError;
 
     fn encode(&mut self, message: Message, buf: &mut BytesMut) -> Result<(), Self::Error> {
-        buf.extend_from_slice(&message.as_bytes(crate::constants::MAGIC));
+        let mut vec =
+            cookie_factory::gen_simple(fn_message(&message, crate::constants::MAGIC), Vec::new())
+                .expect("writing message to bytes");
+        buf.extend_from_slice(&mut vec);
         Ok(())
     }
 }

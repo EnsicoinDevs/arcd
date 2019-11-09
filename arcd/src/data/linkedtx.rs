@@ -1,7 +1,8 @@
 use crate::data::{validation::SanityCheck, PairedUtxo, UtxoData};
-use ensicoin_messages::resource::{Outpoint, Transaction};
-use ensicoin_serializer::Serialize;
+use ensicoin_messages::resource::{Outpoint, Transaction, tx::{fn_outpoint, fn_tx_input, fn_tx_output}, script::fn_script};
 use std::collections::{HashMap, HashSet};
+use cookie_factory::{bytes::{be_u32, be_u64}};
+use ensicoin_serializer::{serializer::{fn_str, fn_list}};
 
 use sha2::Digest;
 
@@ -91,7 +92,7 @@ impl LinkedTransaction {
 
         let mut hasher_outpoints = sha2::Sha256::default();
         for input in &self.transaction.inputs {
-            hasher_outpoints.input(input.previous_output.serialize());
+            hasher_outpoints.input(ensicoin_messages::as_bytes(fn_outpoint(&input.previous_output)));
         }
         let simple_outpoint_hash = hasher_outpoints.result();
 
@@ -101,7 +102,7 @@ impl LinkedTransaction {
 
         let mut hasher_outputs = sha2::Sha256::default();
         for output in &self.transaction.outputs {
-            hasher_outputs.input(output.serialize());
+            hasher_outputs.input(ensicoin_messages::as_bytes(fn_tx_output(output)));
         }
         let hash_outputs = hasher_outputs.result();
 
@@ -112,12 +113,12 @@ impl LinkedTransaction {
                 _ => return Err(()),
             });
             let mut hasher = sha2::Sha256::default();
-            hasher.input(self.transaction.version.serialize());
-            hasher.input(self.transaction.flags.serialize());
+            hasher.input(ensicoin_messages::as_bytes(be_u32(self.transaction.version)));
+            hasher.input(ensicoin_messages::as_bytes(fn_list(self.transaction.flags.len() as u64, self.transaction.flags.iter().map(fn_str))));
             hasher.input(&hash_outpoints);
-            hasher.input(input.previous_output.serialize());
+            hasher.input(ensicoin_messages::as_bytes(fn_outpoint(&input.previous_output)));
             hasher.input(match self.dependencies.get(&input.previous_output) {
-                Some(dep) => dep.data.value.serialize(),
+                Some(dep) => ensicoin_messages::as_bytes(be_u64(dep.data.value)),
                 _ => return Err(()),
             });
             hasher.input(&hash_outputs);

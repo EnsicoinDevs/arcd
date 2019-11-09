@@ -18,6 +18,7 @@ name = "arcd"
 version = "0.1.0"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cookie-factory 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "dirs 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ensicoin_messages 1.0.0",
  "ensicoin_serializer 2.0.6",

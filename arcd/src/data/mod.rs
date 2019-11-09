@@ -7,4 +7,4 @@ mod utxo;
 pub mod validation;
 
 pub use codec::{MessageCodec, MessageCodecError};
-pub use utxo::{PairedUtxo, UtxoData};
+pub use utxo::{PairedUtxo, UtxoData, ser_utxo_data, ser_paired_utxo};

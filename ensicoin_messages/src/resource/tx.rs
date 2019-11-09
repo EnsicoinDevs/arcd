@@ -20,6 +20,12 @@ pub struct Outpoint {
     pub index: u32,
 }
 
+impl Outpoint {
+    pub fn serialize(&self) -> Vec<u8> {
+        crate::as_bytes(fn_outpoint(self))
+    }
+}
+
 pub fn fn_outpoint<'c, 'a: 'c, W: Write + 'c>(outpoint: &'a Outpoint) -> impl SerializeFn<W> + 'c {
     tuple((slice(outpoint.hash), be_u32(outpoint.index)))
 }
@@ -28,6 +34,12 @@ pub fn fn_outpoint<'c, 'a: 'c, W: Write + 'c>(outpoint: &'a Outpoint) -> impl Se
 pub struct TransactionInput {
     pub previous_output: Outpoint,
     pub script: Script,
+}
+
+impl TransactionInput {
+    pub fn serialize(&self) -> Vec<u8> {
+        crate::as_bytes(fn_tx_input(self))
+    }
 }
 
 pub fn fn_tx_input<'c, 'a: 'c, W: Write + 'c>(
@@ -44,6 +56,13 @@ pub struct TransactionOutput {
     pub value: u64,
     pub script: Script,
 }
+
+impl TransactionOutput {
+    pub fn serialize(&self) -> Vec<u8> {
+        crate::as_bytes(fn_tx_output(self))
+    }
+}
+
 pub fn fn_tx_output<'c, 'a: 'c, W: Write + 'c>(
     tx_out: &'a TransactionOutput,
 ) -> impl SerializeFn<W> + 'c {

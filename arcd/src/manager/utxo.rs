@@ -1,11 +1,12 @@
 use crate::{
-    data::{linkedblock::LinkedBlock, PairedUtxo, UtxoData},
+    data::{linkedblock::LinkedBlock, ser_paired_utxo, ser_utxo_data, PairedUtxo, UtxoData},
     error::Error,
 };
 use bytes::BytesMut;
+use ensicoin_messages::resource::tx::fn_outpoint;
 use ensicoin_messages::resource::{Outpoint, Transaction};
 
-use ensicoin_serializer::{Deserialize, Serialize, Sha256Result};
+use ensicoin_serializer::{Deserialize, Sha256Result};
 
 pub struct UtxoManager {
     database: sled::Db,
@@ -45,24 +46,24 @@ impl UtxoManager {
         block_height: u32,
     ) -> Result<(), Error> {
         for (i, output) in tx.outputs.iter().enumerate() {
-            let data = UtxoData {
+            let data = ensicoin_messages::as_bytes(ser_utxo_data(&UtxoData {
                 script: output.script.clone(),
                 value: output.value,
                 block_height,
                 coin_base,
-            }
-            .serialize();
+            }));
             let outpoint = Outpoint {
                 hash: Sha256Result::clone_from_slice(hash),
                 index: (i as u32),
             };
-            self.database.insert(outpoint.serialize(), data.to_vec())?;
+            self.database
+                .insert(ensicoin_messages::as_bytes(fn_outpoint(&outpoint)), data)?;
         }
         Ok(())
     }
 
     pub fn get(&self, utxo: &Outpoint) -> Result<UtxoData, Error> {
-        match self.database.get(utxo.serialize())? {
+        match self.database.get(ensicoin_messages::as_bytes(fn_outpoint(utxo)))? {
             Some(x) => {
                 let mut de = ensicoin_serializer::Deserializer::new(BytesMut::from(&*x));
                 Ok(UtxoData::deserialize(&mut de)?)
@@ -72,7 +73,7 @@ impl UtxoManager {
     }
 
     pub fn delete(&self, utxo: &Outpoint) -> Result<(), Error> {
-        self.database.remove(utxo.serialize())?;
+        self.database.remove(ensicoin_messages::as_bytes(fn_outpoint(utxo)))?;
         Ok(())
     }
 
@@ -99,8 +100,8 @@ impl UtxoManager {
     pub fn restore(&mut self, utxos: Vec<PairedUtxo>) -> Result<(), Error> {
         for pairedtx in utxos {
             self.database.insert(
-                pairedtx.outpoint.serialize(),
-                pairedtx.data.serialize().to_vec(),
+                ensicoin_messages::as_bytes(fn_outpoint(&pairedtx.outpoint)),
+                ensicoin_messages::as_bytes(ser_utxo_data(&pairedtx.data)),
             )?;
         }
         Ok(())

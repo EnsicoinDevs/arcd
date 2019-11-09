@@ -1,4 +1,6 @@
-use ensicoin_serializer::{Serialize, Sha256Result};
+use cookie_factory::{bytes::be_u8, combinator::slice};
+use ensicoin_messages::resource::fn_block;
+use ensicoin_serializer::{serializer::fn_list, Sha256Result};
 
 use std::fs;
 #[cfg(feature = "service_discover")]
@@ -93,7 +95,6 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         },
         txs: Vec::new(),
     };
-    println!("{:?}", genesis.header.serialize().to_vec());
     let genesis_hash = genesis
         .double_hash()
         .iter()
@@ -117,8 +118,8 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         }
     };
     if let Err(e) = blockchain_db.insert(
-        genesis.double_hash().serialize().to_vec(),
-        genesis.serialize().to_vec(),
+        &genesis.double_hash(),
+        ensicoin_messages::as_bytes(fn_block(&genesis)),
     ) {
         return Err(format!(
             "Could not insert genesis block in blockchain: {}",
@@ -126,25 +127,34 @@ pub fn bootstrap(data_dir: &std::path::PathBuf) -> Result<(), String> {
         ));
     };
 
-    if let Err(e) = stats_db.insert("genesis_block", genesis.double_hash().serialize().to_vec()) {
+    if let Err(e) = stats_db.insert(
+        "genesis_block",
+        ensicoin_messages::as_bytes(slice(genesis.double_hash())),
+    ) {
         return Err(format!("Could not insert genesis hash in stats: {}", e));
     };
 
     if let Err(e) = work.insert(
-        genesis.double_hash().serialize().to_vec(),
-        vec![0 as u8].serialize().to_vec(),
+        genesis.double_hash(),
+        ensicoin_messages::as_bytes(fn_list(1, [0 as u8].iter().copied().map(be_u8))),
     ) {
         return Err(format!("Could not insert base work: {}", e));
     }
 
-    if let Err(e) = stats_db.insert("best_block", genesis.double_hash().serialize().to_vec()) {
+    if let Err(e) = stats_db.insert(
+        "best_block",
+        ensicoin_messages::as_bytes(slice(genesis.double_hash())),
+    ) {
         return Err(format!(
             "Could not insert genesis hash in best_block stats: {}",
             e
         ));
     };
 
-    if let Err(e) = stats_db.insert("10_last", vec![genesis.double_hash()].serialize().to_vec()) {
+    if let Err(e) = stats_db.insert(
+        "10_last",
+        ensicoin_messages::as_bytes(fn_list(1, [genesis.double_hash()].into_iter().map(slice))),
+    ) {
         return Err(format!(
             "Could not insert genesis hash in best_block stats: {}",
             e
