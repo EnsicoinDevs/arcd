@@ -1,5 +1,8 @@
-use bytes::{BufMut, Bytes};
-use ensicoin_serializer::{Deserialize, Deserializer, Serialize};
+use ensicoin_serializer::serializer::fn_list;
+use ensicoin_serializer::{Deserialize, Deserializer};
+
+use cookie_factory::{bytes::be_u8, SerializeFn};
+use std::io::Write;
 
 #[derive(Hash, Clone, PartialEq, Eq, Debug)]
 pub enum OP {
@@ -65,29 +68,22 @@ impl Deserialize for Script {
     }
 }
 
-impl Serialize for Script {
-    fn serialize(&self) -> Bytes {
-        let script = &self.0;
-        let mut bytes = bytes::BytesMut::from(
-            ensicoin_serializer::VarUint {
-                value: script.len() as u64,
-            }
-            .serialize(),
-        );
-        bytes.reserve(script.len());
-        for op_code in script {
-            let num_code = match op_code {
+pub fn fn_script<'c, 'a: 'c, W: Write + 'c>(
+    Script(script): &'a Script,
+) -> impl SerializeFn<W> + 'c {
+    fn_list(
+        script.len() as u64,
+        script.iter().map(|o| {
+            be_u8(match o {
                 OP::False => 0,
                 OP::True => 80,
-                OP::Push(n) | OP::Byte(n) => n.clone(),
+                OP::Push(n) | OP::Byte(n) => *n,
                 OP::Dup => 100,
                 OP::Equal => 120,
                 OP::Verify => 140,
                 OP::Hash160 => 160,
                 OP::Checksig => 170,
-            };
-            bytes.put_u8(num_code);
-        }
-        Bytes::from(bytes)
-    }
+            })
+        }),
+    )
 }

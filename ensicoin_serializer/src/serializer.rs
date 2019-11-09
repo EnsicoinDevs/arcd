@@ -6,7 +6,8 @@ use std::net::SocketAddr;
 use cookie_factory::SerializeFn;
 use cookie_factory::{
     bytes::{be_u16, be_u32, be_u64, be_u8},
-    combinator::cond,
+    combinator::{cond, string},
+    multi::all,
     sequence::tuple,
 };
 use std::io::Write;
@@ -24,6 +25,26 @@ pub fn fn_varuint<'c, W: Write + 'c>(value: VarUint) -> impl SerializeFn<W> + 'c
             tuple((be_u8(0xFE), be_u32(val as u32))),
         ),
         cond(0x100000000 <= val, tuple((be_u8(0xFF), be_u64(val)))),
+    ))
+}
+
+pub fn fn_list<'c, W: Write + 'c, G: 'c, It: 'c>(
+    length: u64,
+    values: It,
+) -> impl SerializeFn<W> + 'c
+where
+    G: SerializeFn<W> + 'c,
+    It: Iterator<Item = G> + Clone,
+{
+    tuple((fn_varuint(VarUint { value: length }), all(values)))
+}
+
+pub fn fn_str<'c, W: Write + 'c, S: AsRef<str> + 'c>(data: S) -> impl SerializeFn<W> + 'c {
+    tuple((
+        fn_varuint(VarUint {
+            value: data.as_ref().len() as u64,
+        }),
+        string(data),
     ))
 }
 

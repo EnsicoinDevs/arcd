@@ -1,12 +1,31 @@
 use bytes::{Bytes, BytesMut};
-use ensicoin_serializer::{Deserialize, Deserializer, Serialize, Sha256Result};
+use ensicoin_serializer::serializer::{fn_list, fn_str};
+use ensicoin_serializer::{Deserialize, Deserializer, Sha256Result};
 
-pub use super::resource::{Block, Transaction};
+use cookie_factory::{
+    bytes::{be_u16, be_u32, be_u64},
+    combinator::{cond, slice},
+    sequence::tuple,
+    SerializeFn,
+};
+use std::io::Write;
 
-#[derive(Serialize, Deserialize, Clone)]
+pub use super::resource::{Block, Transaction, fn_tx, fn_block};
+
+#[derive(Deserialize, Clone)]
 pub struct GetBlocks {
     pub block_locator: Vec<Sha256Result>,
     pub stop_hash: Sha256Result,
+}
+
+pub fn fn_getblocks<'c, 'a: 'c, W: Write + 'c>(value: &'a GetBlocks) -> impl SerializeFn<W> + 'c {
+    tuple((
+        fn_list(
+            value.block_locator.len() as u64,
+            value.block_locator.iter().map(slice),
+        ),
+        slice(value.stop_hash),
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -14,6 +33,14 @@ pub struct Address {
     pub timestamp: u64,
     pub ip: [u8; 16],
     pub port: u16,
+}
+
+pub fn fn_address<'c, W: Write + 'c>(address: Address) -> impl SerializeFn<W> + 'c {
+    tuple((
+        be_u64(address.timestamp),
+        slice(address.ip),
+        be_u16(address.port),
+    ))
 }
 
 impl Deserialize for Address {
@@ -34,21 +61,22 @@ impl Deserialize for Address {
     }
 }
 
-impl Serialize for Address {
-    fn serialize(&self) -> Bytes {
-        let mut buf = Bytes::new();
-        buf.extend_from_slice(&self.timestamp.serialize());
-        buf.extend_from_slice(&self.ip);
-        buf.extend_from_slice(&self.port.serialize());
-        buf
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Whoami {
     pub version: u32,
     pub address: Address,
     pub services: Vec<String>,
+}
+
+pub fn fn_whoami<'c, 'a: 'c, W: Write + 'c>(message: &'a Whoami) -> impl SerializeFn<W> + 'c {
+    tuple((
+        be_u32(message.version),
+        fn_address(message.address),
+        fn_list(
+            message.services.len() as u64,
+            message.services.iter().map(fn_str),
+        ),
+    ))
 }
 
 impl Whoami {
@@ -61,10 +89,14 @@ impl Whoami {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Deserialize, Clone, Copy)]
 pub struct InvVect {
     pub data_type: crate::message::ResourceType,
     pub hash: Sha256Result,
+}
+
+pub fn fn_inv_vect<'c, 'a: 'c, W: Write + 'c>(inv_vect: &'a InvVect) -> impl SerializeFn<W> + 'c {
+    tuple((fn_res_type(inv_vect.data_type), slice(inv_vect.hash)))
 }
 
 impl std::fmt::Debug for InvVect {
@@ -83,13 +115,11 @@ pub enum ResourceType {
     Block,
 }
 
-impl Serialize for ResourceType {
-    fn serialize(&self) -> Bytes {
-        match self {
-            ResourceType::Block => (1 as u32).serialize(),
-            ResourceType::Transaction => (0 as u32).serialize(),
-        }
-    }
+pub fn fn_res_type<'c, W: Write + 'c>(res_type: ResourceType) -> impl SerializeFn<W> + 'c {
+    be_u32(match res_type {
+        ResourceType::Block => 1,
+        ResourceType::Transaction => 0,
+    })
 }
 
 impl Deserialize for ResourceType {
@@ -224,56 +254,88 @@ impl Message {
             Message::Tx(_) => MessageType::Transaction,
         }
     }
-    pub fn payload(&self) -> Bytes {
-        match self {
-            Message::Ping
-            | Message::Pong
-            | Message::GetMempool
-            | Message::WhoamiAck
-            | Message::GetAddr => Bytes::new(),
-            Message::Whoami(m) => m.serialize(),
-            Message::Addr(m) => m.serialize(),
-            Message::GetBlocks(m) => m.serialize(),
-            Message::Inv(m) => m.serialize(),
-            Message::GetData(m) => m.serialize(),
-            Message::NotFound(m) => m.serialize(),
-            Message::Block(m) => m.serialize(),
-            Message::Tx(m) => m.serialize(),
-        }
-    }
-
-    pub fn as_bytes(&self, magic: u32) -> Bytes {
-        let mut bytes = bytes::BytesMut::new();
-        bytes.extend_from_slice(magic.serialize().as_ref());
-        bytes.extend_from_slice(self.message_type().serialize().as_ref());
-        let payload = self.payload();
-        bytes.extend_from_slice((payload.len() as u64).serialize().as_ref());
-        bytes.extend_from_slice(payload.as_ref());
-        Bytes::from(bytes)
-    }
 }
 
-impl Serialize for MessageType {
-    fn serialize(&self) -> Bytes {
-        Bytes::from(
-            &match self {
-                MessageType::Whoami => [119, 104, 111, 97, 109, 105, 0, 0, 0, 0, 0, 0],
-                MessageType::WhoamiAck => [119, 104, 111, 97, 109, 105, 97, 99, 107, 0, 0, 0],
-                MessageType::GetAddr => [103, 101, 116, 97, 100, 100, 114, 0, 0, 0, 0, 0],
-                MessageType::Addr => [97, 100, 100, 114, 0, 0, 0, 0, 0, 0, 0, 0],
-                MessageType::GetBlocks => [103, 101, 116, 98, 108, 111, 99, 107, 115, 0, 0, 0],
-                MessageType::GetMempool => [103, 101, 116, 109, 101, 109, 112, 111, 111, 108, 0, 0],
-                MessageType::Inv => [105, 110, 118, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                MessageType::GetData => [103, 101, 116, 100, 97, 116, 97, 0, 0, 0, 0, 0],
-                MessageType::NotFound => [110, 111, 116, 102, 111, 117, 110, 100, 0, 0, 0, 0],
-                MessageType::Ping => [50, 112, 108, 117, 115, 50, 105, 115, 52, 0, 0, 0],
-                MessageType::Pong => [109, 105, 110, 117, 115, 49, 116, 104, 97, 116, 115, 51],
-                MessageType::Block => [98, 108, 111, 99, 107, 0, 0, 0, 0, 0, 0, 0],
-                MessageType::Transaction => [116, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                MessageType::Unknown(_) => [0; 12],
-            }[..],
-        )
-    }
+pub fn fn_payload<'c, 'a: 'c, W: Write + 'c>(message: &'a Message) -> impl SerializeFn<W> + 'c {
+    let msg_type = message.message_type();
+    tuple((
+        cond(
+            msg_type == MessageType::Whoami,
+            fn_whoami(match message {
+                Message::Whoami(m) => m,
+                _ => unreachable!(),
+            }),
+        ),
+        cond(msg_type == MessageType::Addr, {
+            let addr = match message {
+                Message::Addr(a) => a,
+                _ => unreachable!(),
+            };
+            fn_list(addr.len() as u64, addr.iter().map(|a| fn_address(*a)))
+        }),
+        cond(msg_type == MessageType::GetBlocks, {
+            fn_getblocks(match message {
+                Message::GetBlocks(g) => g,
+                _ => unreachable!(),
+            })
+        }),
+        cond(
+            msg_type == MessageType::Inv
+                || msg_type == MessageType::GetData
+                || msg_type == MessageType::NotFound,
+            {
+                let vec = match message {
+                    Message::Inv(v) | Message::GetData(v) | Message::NotFound(v) => v,
+                    _ => unreachable!(),
+                };
+                fn_list(vec.len() as u64, vec.iter().map(fn_inv_vect))
+            },
+        ),
+        cond(msg_type == MessageType::Block, {
+            fn_block(match message {
+                Message::Block(b) => b,
+                _ => unreachable!(),
+            })
+        }),
+        cond(msg_type == MessageType::Transaction, {
+            fn_tx(match message {
+                Message::Tx(t) => t,
+                _ => unreachable!(),
+            })
+        }),
+    ))
+}
+
+pub fn fn_message<'c, 'a: 'c, W: Write + 'c>(
+    message: &'a Message,
+    magic: u32,
+) -> impl SerializeFn<W> + 'c {
+    let payload = cookie_factory::gen_simple(fn_payload(message), Vec::new()).expect("payload");
+    tuple((
+        be_u32(magic),
+        fn_message_type(message.message_type()),
+        be_u64(payload.len() as u64),
+        slice(payload),
+    ))
+}
+
+pub fn fn_message_type<'c, W: Write + 'c>(msg_type: MessageType) -> impl SerializeFn<W> + 'c {
+    slice(match msg_type {
+        MessageType::Whoami => [119, 104, 111, 97, 109, 105, 0, 0, 0, 0, 0, 0],
+        MessageType::WhoamiAck => [119, 104, 111, 97, 109, 105, 97, 99, 107, 0, 0, 0],
+        MessageType::GetAddr => [103, 101, 116, 97, 100, 100, 114, 0, 0, 0, 0, 0],
+        MessageType::Addr => [97, 100, 100, 114, 0, 0, 0, 0, 0, 0, 0, 0],
+        MessageType::GetBlocks => [103, 101, 116, 98, 108, 111, 99, 107, 115, 0, 0, 0],
+        MessageType::GetMempool => [103, 101, 116, 109, 101, 109, 112, 111, 111, 108, 0, 0],
+        MessageType::Inv => [105, 110, 118, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        MessageType::GetData => [103, 101, 116, 100, 97, 116, 97, 0, 0, 0, 0, 0],
+        MessageType::NotFound => [110, 111, 116, 102, 111, 117, 110, 100, 0, 0, 0, 0],
+        MessageType::Ping => [50, 112, 108, 117, 115, 50, 105, 115, 52, 0, 0, 0],
+        MessageType::Pong => [109, 105, 110, 117, 115, 49, 116, 104, 97, 116, 115, 51],
+        MessageType::Block => [98, 108, 111, 99, 107, 0, 0, 0, 0, 0, 0, 0],
+        MessageType::Transaction => [116, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        MessageType::Unknown(_) => [0; 12],
+    })
 }
 
 impl Deserialize for MessageType {
